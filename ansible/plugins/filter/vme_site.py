@@ -195,6 +195,13 @@ def vme_site_errors(site, roles_dir):
             errs.append(f"{label}: the hosts need admin_password (a vault variable); the Manager logs in with it")
         if len({h.get("admin_user", defaults.get("admin_user", "hvmadmin")) for h in present}) > 1:
             errs.append(f"{label}: all hosts need the same admin_user (the Manager uses one SSH login)")
+        # The cluster API takes one SSH password for all hosts (the first host's).
+        pw_vars = {h["name"]: h.get("admin_password", defaults.get("admin_password")) for h in present}
+        if len(set(pw_vars.values())) > 1:
+            errs.append(
+                f"{label}: all hosts need the same admin_password vault variable (the Manager uses one SSH login): "
+                + ", ".join(f"{n}={v or '-'}" for n, v in sorted(pw_vars.items()))
+            )
         ds = cl.get("datastores", [])
         for n in _dupes([d["name"] for d in ds]):
             errs.append(f"{label}: datastore name '{n}' is used more than once")

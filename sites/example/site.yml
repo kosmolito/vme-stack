@@ -85,6 +85,7 @@ hosts:
     ip: 10.30.0.24
     platform: manual                  # per host; overrides defaults.platform (no bmc then)
     admin_user: hvmadmin              # admin_user, admin_password, ssh_keys, boot_disk: per host too
+    #                                   (admin_user and admin_password: the same on all hosts of a cluster)
     nics:
       layout: shared                  # bond0 carries mgmt (untagged: native VLAN) and VM traffic
       mgmt: ["00:50:56:00:30:24"]

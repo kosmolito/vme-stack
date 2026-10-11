@@ -9,6 +9,11 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- Preflight: all hosts of a cluster must name the same `admin_password` vault
+  variable (as already for `admin_user`). The Manager's cluster API takes one SSH
+  login for all hosts, so different passwords used to fail the cluster step late
+  in the run. BMC credentials (`bmc.credentials`) stay per host.
+
 ## [0.1.0] - 2026-10-11
 
 First public release. From empty servers (or VMs) to a working HPE VM Essentials

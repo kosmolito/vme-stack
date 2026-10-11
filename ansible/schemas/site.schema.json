@@ -662,7 +662,7 @@
           "default": "dedicated"
         },
         "admin_password": {
-          "description": "Name of a vault variable with a password for admin_user. Set in post-install, password SSH login allowed for that user only. Needed by vme_clusters (the Manager logs in with it).",
+          "description": "Name of a vault variable with a password for admin_user. Set in post-install, password SSH login allowed for that user only. Needed by vme_clusters (the Manager logs in with it); all hosts of a cluster must name the same variable (one login for the whole cluster).",
           "type": "string",
           "pattern": "^[a-z_][a-z0-9_]*$"
         }
