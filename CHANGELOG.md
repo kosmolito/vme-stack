@@ -9,24 +9,25 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
-- **Site file change: secrets are plain Ansible values.** A secret field holds
-  the value itself, the Ansible way: usually a quoted template referencing the
-  vault, e.g. `hvm_admin_password: "{{ vault_hvm_admin_password }}"` (recommended),
-  or a literal (works, not recommended). It used to hold the name of a vault
-  variable, which did not tell a reader what was a literal. Preflight lists every
-  secret that does not resolve (missing vault, variable or value). Changes: `admin_user`/`admin_password` of the hosts are renamed
-  `hvm_admin_user`/`hvm_admin_password` (in `defaults` and per host);
-  `bmc.credentials` and `vcenter.credentials` are replaced by `username` +
-  `password` (each BMC has its own login; servers with the same login can name
-  the same variable); `vme_manager.admin_password`, `license_key`,
-  `ssh_private_key`, `ssh_public_key` take values (or references) instead of
-  variable names.
-  Old keys fail the schema check with the new form. See `sites/example/`.
-
-- Preflight: all hosts of a cluster must name the same `admin_password` vault
-  variable (as already for `admin_user`). The Manager's cluster API takes one SSH
-  login for all hosts, so different passwords used to fail the cluster step late
-  in the run. BMC credentials (`bmc.credentials`) stay per host.
+- **Site file change: secrets are plain Ansible values.** A secret field holds the
+  value itself, the Ansible way: usually a quoted template referencing the vault,
+  e.g. `hvm_admin_password: "{{ vault_hvm_admin_password }}"` (recommended), or a
+  literal (works, not recommended). It used to hold the name of a vault variable,
+  which did not tell a reader what was a literal. Preflight lists every secret
+  that does not resolve (vault not loaded, variable or value missing).
+- **Renamed keys** (old ones fail the schema check with the new form; see
+  `sites/example/`):
+  - the hosts' `admin_user`/`admin_password` -> `hvm_admin_user`/`hvm_admin_password`
+    (in `defaults` and per host); the Manager's stay `vme_manager.admin_user`/
+    `admin_password`
+  - `bmc.credentials` -> `bmc.username` + `bmc.password`: each BMC its own login,
+    or several servers sharing one vault variable
+  - `vcenter.credentials` -> `vcenter.username` + `vcenter.password`
+  - `vme_manager.admin_password`, `license_key`, `ssh_private_key`,
+    `ssh_public_key` hold values (or vault references), no longer variable names
+- Preflight: all hosts of a cluster need the same `hvm_admin_password` (as already
+  the same `hvm_admin_user`). The Manager's cluster API takes one SSH login for
+  all hosts, so different passwords used to fail the cluster step late in the run.
 
 ## [0.1.0] - 2026-10-11
 
