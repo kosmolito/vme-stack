@@ -51,6 +51,38 @@ Without `.vault_pass`: remove the `cmdline` line in `ansible-navigator.yml` and 
 with `--ask-vault-pass --pae false`. With a different site file name, change
 `/site/site.yml` there.
 
+## Splitting a site into group_vars and host_vars
+
+The site file is a plain Ansible inventory, so the usual layout works as well: the
+hosts in an INI file, the settings next to it in `group_vars/` and `host_vars/`
+(Ansible loads them with the inventory). Same settings, same names, only spread
+over files; e.g.:
+
+```
+sites/acme/
+  inventory.ini                   # [deploy_server], [hvm], [vme_manager]: host names only
+  group_vars/all/site.yml         # everything under all.vars here (site, network, vme_manager, ...)
+  group_vars/all/vault.yml        # secrets (ansible-vault encrypted)
+  group_vars/hvm.yml              # the hvm group's vars (platform, ansible_user, key, ...)
+  host_vars/deploy.yml            # the deploy server: ansible_host, ansible_user, key, media
+  host_vars/hvm01.yml             # one per host: ansible_host, bmc, nics, ...
+  ansible-navigator.yml           # inventory: entries: [/site/inventory.ini]
+```
+
+```ini
+[deploy_server]
+deploy
+
+[hvm]
+hvm01
+hvm02
+
+[vme_manager]
+hvm01
+```
+
+Check it the same way: `ansible-navigator run validate.yml`.
+
 ## What the example shows
 
 | Host | Boot | Network | Disk |

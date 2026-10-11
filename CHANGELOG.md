@@ -9,6 +9,13 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- A site can be split the usual Ansible way (an INI inventory plus `group_vars/`
+  and `host_vars/`); `sites/example/README.md` shows it. The site checks
+  (`tests/check_sites.py`) and the support bundle now take the whole site
+  directory (without vault, keys and run output), not only the inventory file.
+- Fix: the support bundle failed (no file at all) when the controller had rendered
+  seeds: their per-host directories in the bundle were not created (since 0.1.3).
+
 - The navigator settings (`sites/example/ansible-navigator.yml`, the repository's
   `ansible-navigator.yaml`) set `container-engine: docker`: with `auto` (also the
   default when it is missing) navigator takes podman whenever podman is installed,

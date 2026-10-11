@@ -4,9 +4,10 @@
     check_sites.py <site.yml> ...     every file must pass (exit 1 otherwise)
     check_sites.py --cases <cases>    each case must fail with its expected message
 
-Each site file is copied alone into a temporary directory (an encrypted vault next
-to it is not loaded) and gets a dummy value for every "{{ vault_... }}" it refers
-to, so the checks run without the vault: in CI and for the lab alike.
+Each site's directory is copied into a temporary directory without its secrets
+(vault files, .vault_pass, keys/, logs/, build/), so group_vars/ and host_vars/ of
+a split site come along, and every "{{ vault_... }}" the site refers to gets a
+dummy value: the checks run without the vault, in CI and for the lab alike.
 """
 
 import argparse
@@ -44,13 +45,36 @@ def dummy_vault(text):
     return out
 
 
-def validate(inventory_text):
-    """Run validate.yml on an inventory; return (passed, output)."""
+SKIP_DIRS = {"keys", "logs", "build", ".git"}
+SKIP_FILES = {"vault.yml", "vault.yaml"}
+
+
+def site_files(inventory):
+    """The files of a site directory that validation needs, relative to it (no secrets)."""
+    base = Path(inventory).parent
+    for f in sorted(base.rglob("*")):
+        rel = f.relative_to(base)
+        if (
+            f.is_file()
+            and not (set(rel.parts[:-1]) & SKIP_DIRS)
+            and f.name not in SKIP_FILES
+            and not f.name.startswith(".vault_pass")
+        ):
+            yield rel
+
+
+def validate(inventory_text, extra_files=None, name="site.yml"):
+    """Run validate.yml on an inventory (plus its other site files); return (passed, output)."""
     with tempfile.TemporaryDirectory(prefix="vme-check-") as d:
-        inv = Path(d) / "site.yml"
+        inv = Path(d) / name
         inv.write_text(inventory_text)
-        extra = Path(d) / "vault.yml"
-        extra.write_text(yaml.safe_dump(dummy_vault(inventory_text)))
+        texts = [inventory_text]
+        for rel, text in (extra_files or {}).items():
+            (Path(d) / rel).parent.mkdir(parents=True, exist_ok=True)
+            (Path(d) / rel).write_text(text)
+            texts.append(text)
+        extra = Path(d) / "dummy-vault.json"
+        extra.write_text(yaml.safe_dump(dummy_vault("\n".join(texts))))
         env = dict(
             os.environ,
             ANSIBLE_CONFIG=str(ROOT / "ansible.cfg"),
@@ -87,9 +111,15 @@ def problems_of(output):
     return [ln for ln in lines if ln and (": " in ln) and not ln.startswith(("TASK", "PLAY", "ok:", "fatal:"))][:12]
 
 
+def check_file(path):
+    base = Path(path).parent
+    others = {rel: (base / rel).read_text(errors="replace") for rel in site_files(path) if base / rel != Path(path)}
+    return validate(Path(path).read_text(), others, Path(path).name)
+
+
 def check_files(paths):
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(lambda p: validate(Path(p).read_text()), paths))
+        results = list(pool.map(check_file, paths))
     failed = 0
     for p, (ok, out) in zip(paths, results, strict=True):
         print(f"{'ok  ' if ok else 'FAIL'} {p}")

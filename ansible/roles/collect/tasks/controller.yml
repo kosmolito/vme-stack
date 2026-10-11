@@ -30,11 +30,36 @@
       collected: {{ now(utc=true).isoformat() }} UTC
       site: {{ hostvars[groups['hvm'][0]].inventory_file }}
 
-- name: The site file
+# The site directory: the inventory and its group_vars/host_vars, without the
+# vault, the vault password, keys and run output (secrets are replaced later too).
+- name: Find the site's files
+  ansible.builtin.find:
+    paths: "{{ hostvars[groups['hvm'][0]].inventory_dir }}"
+    recurse: true
+    hidden: false
+    excludes: [vault.yml, vault.yaml]
+  register: site_files
+
+- name: The site's directories in the bundle
+  ansible.builtin.file:
+    path: "{{ bundle_dir }}/controller/site/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: "{{ (['.'] + site_files.files | rejectattr('path', 'search', '/(keys|logs|build)/')
+            | map(attribute='path') | map('relpath', site_dir) | map('dirname') | list) | unique }}"
+  vars:
+    site_dir: "{{ hostvars[groups['hvm'][0]].inventory_dir }}"
+
+- name: The site directory
   ansible.builtin.copy:
-    src: "{{ hostvars[groups['hvm'][0]].inventory_file }}"
-    dest: "{{ bundle_dir }}/controller/site.yml"
+    src: "{{ item.path }}"
+    dest: "{{ bundle_dir }}/controller/site/{{ item.path | relpath(site_dir) }}"
     mode: "0600"
+  loop: "{{ site_files.files | rejectattr('path', 'search', '/(keys|logs|build)/') | list }}"
+  loop_control:
+    label: "{{ item.path | relpath(site_dir) }}"
+  vars:
+    site_dir: "{{ hostvars[groups['hvm'][0]].inventory_dir }}"
 
 # The values the roles use, as resolved from the inventory; secrets are not in this list.
 - name: The inventory as resolved
@@ -63,6 +88,13 @@
     depth: 2
   register: seed_files
   when: (playbook_dir ~ '/build') is directory
+
+- name: A directory per host for its seed
+  ansible.builtin.file:
+    path: "{{ bundle_dir }}/controller/seeds/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: "{{ seed_files.files | default([]) | map(attribute='path') | map('dirname') | map('basename') | unique }}"
 
 - name: Copy rendered seeds and ISO URLs
   ansible.builtin.copy:
