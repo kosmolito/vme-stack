@@ -42,7 +42,8 @@ sites/acme/
 The site file is a plain **Ansible inventory**: site-wide settings in `all.vars`,
 the deploy server in group `deploy_server`, the HVM hosts in group `hvm` (with
 their defaults as group vars), the Manager's host in group `vme_manager`. Every
-setting, commented: [`sites/example/inventory.yml`](sites/example/inventory.yml).
+setting, commented: [`sites/example/inventory.yml`](sites/example/inventory.yml). Every
+variable with its meaning and default: [`docs/variables.md`](docs/variables.md).
 
 **SSH key: `~/.ssh/id_ed25519` by default**, for the deploy server login and the
 hosts' admin user alike (its public key is installed on the hosts). It stays in
@@ -87,6 +88,7 @@ More on running the container (without navigator, from a Mac, emergency hotfixes
 | `ansible/` | the pipeline: playbooks, roles, the site settings (`roles/preflight/meta/argument_specs.yml`) |
 | `ee/` | the container image (execution environment) and how it is released |
 | `sites/example/` | a site with every setting; real sites stay out of this repository (gitignored) |
+| `docs/variables.md` | every site variable: what it is, type, default (generated: `task docs`) |
 | `spec.md` | the specification, with a log of all design decisions |
 | `CHANGELOG.md` | what changed in each release |
 | `Taskfile.yml` | checks and releases: `task check`, `task release VERSION=X.Y.Z` |

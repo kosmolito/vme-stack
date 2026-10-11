@@ -47,8 +47,13 @@
   run_once: true
   ansible.builtin.validate_argument_spec:
     argument_spec: "{{ specs.argument_specs.deploy_server.options }}"
-    provided_arguments:
-      media: "{{ hostvars[deploy_host].media }}"
+    provided_arguments: >-
+      {%- set out = {} -%}
+      {%- for k in ['ansible_host', 'ansible_user', 'ansible_ssh_private_key_file', 'ansible_connection', 'media']
+            if k in hostvars[deploy_host] -%}
+      {{-   out.update({k: hostvars[deploy_host][k]}) -}}
+      {%- endfor -%}
+      {{ out }}
   vars:
     specs: "{{ lookup('ansible.builtin.file', role_path ~ '/meta/argument_specs.yml') | from_yaml }}"
   register: deploy_spec

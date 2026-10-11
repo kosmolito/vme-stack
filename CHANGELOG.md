@@ -9,6 +9,13 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **[`docs/variables.md`](docs/variables.md)**: every site variable in one place,
+  with what it is, its type, whether it is required and its default. Generated
+  from the spec preflight validates sites with (`task docs`; `task check` fails
+  when it is out of date), so it cannot drift. Preflight now also checks the
+  deploy server's connection variables (`ansible_host`, `ansible_user`,
+  `ansible_ssh_private_key_file`, `ansible_connection`).
+
 ## [0.1.7] - 2026-10-11
 
 - **The Manager's SSH key pair defaults to your login key**: without

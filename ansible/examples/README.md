@@ -126,6 +126,8 @@ host's `ansible_ssh_private_key_file`). Another key: `vme_manager.ssh_private_ke
 
 ## Values and secrets
 
+Every variable, what it means and its default: [`docs/variables.md`](../../docs/variables.md).
+
 Values in the site file are plain Ansible: a literal, or a template Ansible resolves
 when the value is used. For secrets, reference the vault with a quoted template,
 `"{{ vault_hvm_admin_password }}"` or `"{{ vault_ilo.password }}"`, so they stay

@@ -2,7 +2,8 @@
 
 [`inventory.yml`](inventory.yml) uses every setting of the site file, each with a comment;
 [`vault.example.yml`](vault.example.yml) lists every secret it names. Values marked
-"default" can be left out. For a guided first site, start from
+"default" can be left out. Every variable in one table, with its meaning and default:
+[`docs/variables.md`](../../docs/variables.md). For a guided first site, start from
 [`ansible/examples/`](../../ansible/examples/README.md) (VMs or bare metal) instead,
 and look things up here.
 

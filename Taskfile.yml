@@ -69,6 +69,14 @@ tasks:
         done
       # CHANGELOG, tested-with table and image pins match ee/VERSION
       - .venv/bin/python scripts/release.py docs
+      # docs/variables.md matches the argument spec (task docs writes it)
+      - .venv/bin/python scripts/variables_doc.py --check
+
+  docs:
+    desc: Write docs/variables.md from the site variables' argument spec
+    deps: [setup]
+    cmds:
+      - .venv/bin/python scripts/variables_doc.py
 
   ee:build:
     desc: Build the EE image from the committed code (options in ee/build.sh)
