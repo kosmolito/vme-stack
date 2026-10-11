@@ -24,17 +24,17 @@ base:
     host: hvm01
     ip: 10.0.0.30
     hostname: vme-manager
-    admin_password: vault_vme_admin
+    admin_password: "{{ vault_vme_admin }}"
     datastore: nfs01
-    ssh_private_key: vault_mgr_key
-    ssh_public_key: vault_mgr_pub
+    ssh_private_key: "{{ vault_mgr_key }}"
+    ssh_public_key: "{{ vault_mgr_pub }}"
   vme_groups: [{name: sto}, {name: gbg}]
   vme_clouds:
     - {name: sto-hvm, type: hvm, groups: [sto, gbg]}
     - name: sto-vc
       type: vmware
       groups: [sto]
-      vcenter: {url: "https://vc.example.com/sdk", credentials: vault_vc, datacenter: DC1}
+      vcenter: {url: "https://vc.example.com/sdk", username: "{{ vault_vc.username }}", password: "{{ vault_vc.password }}", datacenter: DC1}
   vme_clusters:
     - name: sto-hvm01
       cloud: sto-hvm
@@ -44,7 +44,7 @@ base:
     - {name: gbg-hvm01, cloud: sto-hvm, group: gbg, hosts: [hvm03]}
   defaults:
     platform: manual
-    admin_password: vault_hvm_admin
+    hvm_admin_password: "{{ vault_hvm_admin }}"
     ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyExampleKeyExampleKey test"]
   hosts:
     - name: hvm01
@@ -123,7 +123,7 @@ cases:
       hosts:
         - name: hvm01
           ip: 10.0.0.21
-          bmc: {address: 10.0.1.21, credentials: vault_ilo}
+          bmc: {address: 10.0.1.21, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}"}
           nics: {mgmt: ["aa:bb:cc:00:00:01"], compute: ["aa:bb:cc:00:00:03"]}
     expect: does not use a bmc block
   - name: seed_mode http not implemented
@@ -197,10 +197,10 @@ cases:
           netplan: {version: 2, ethernets: {eno1: {addresses: ["10.0.0.22/24"]}}}
           hpe_vm: {mgmt_interface: eno1}
     expect: all hosts need the same mgmt/compute interface names
-  - name: cluster without admin_password
-    patch: {defaults: {admin_password: null}}
-    expect: the hosts need admin_password
-  - name: cluster hosts with different admin_password variables
+  - name: cluster without hvm_admin_password
+    patch: {defaults: {hvm_admin_password: null}}
+    expect: the hosts need hvm_admin_password
+  - name: cluster hosts with different hvm_admin_password references
     patch:
       hosts:
         - name: hvm01
@@ -208,12 +208,12 @@ cases:
           nics: {mgmt: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"], compute: ["aa:bb:cc:00:00:03", "aa:bb:cc:00:00:04"]}
         - name: hvm02
           ip: 10.0.0.22
-          admin_password: vault_hvm02_admin
+          hvm_admin_password: "{{ vault_hvm02_admin }}"
           nics: {mgmt: ["aa:bb:cc:00:01:01", "aa:bb:cc:00:01:02"], compute: ["aa:bb:cc:00:01:03", "aa:bb:cc:00:01:04"]}
         - name: hvm03
           ip: 10.0.0.23
           nics: {mgmt: ["aa:bb:cc:00:02:01"], compute: ["aa:bb:cc:00:02:03"]}
-    expect: "all hosts need the same admin_password vault variable (the Manager uses one SSH login): hvm01=vault_hvm_admin, hvm02=vault_hvm02_admin"
+    expect: "all hosts need the same hvm_admin_password (the Manager uses one SSH login): hvm01={{ vault_hvm_admin }}, hvm02={{ vault_hvm02_admin }}"
   - name: cluster without compute_vlans
     patch: {network: {compute_vlans: null}}
     expect: network.compute_vlans is required
@@ -229,6 +229,18 @@ cases:
             - {name: nfs02, type: nfs, host: 10.0.0.6, path: /b, default: true}
     expect: only one datastore can be the default
   # --- groups, clouds, clusters ---
+  - name: old admin_user key
+    patch: {defaults: {admin_user: hvmadmin}}
+    expect: admin_user is renamed hvm_admin_user
+  - name: old bmc.credentials
+    patch:
+      defaults: {platform: redfish}
+      hosts:
+        - name: hvm01
+          ip: 10.0.0.21
+          bmc: {address: 10.0.1.21, credentials: vault_ilo}
+          nics: {mgmt: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"], compute: ["aa:bb:cc:00:00:03", "aa:bb:cc:00:00:04"]}
+    expect: bmc.credentials is replaced by bmc.username and bmc.password
   - name: old vme_cluster block
     patch: {vme_cluster: {ssh_private_key: vault_mgr_key, ssh_public_key: vault_mgr_pub}}
     expect: Replaced by vme_groups, vme_clouds and vme_clusters
@@ -266,7 +278,7 @@ cases:
         - name: sto-hvm
           type: hvm
           groups: [sto]
-          vcenter: {url: "https://vc.example.com/sdk", credentials: vault_vc, datacenter: DC1}
+          vcenter: {url: "https://vc.example.com/sdk", username: "{{ vault_vc.username }}", password: "{{ vault_vc.password }}", datacenter: DC1}
     expect: vcenter is only for clouds of type vmware
   - name: clusters without the Manager's SSH key
     patch: {vme_manager: {ssh_private_key: null}}

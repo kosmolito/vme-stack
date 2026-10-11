@@ -19,12 +19,12 @@
     method: POST
     validate_certs: false
     body_format: json
-    body: "{{ setup_body | combine({'licenseKey': lookup('ansible.builtin.vars', vme_manager.license_key_var)}
-                                   if vme_manager.license_key_var else {}) }}"
+    body: "{{ setup_body | combine({'licenseKey': vme_manager.license_key}
+                                   if vme_manager.license_key else {}) }}"
     timeout: 120
     return_content: true
   vars:
-    vme_admin_password: "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+    vme_admin_password: "{{ vme_manager.admin_password }}"
     setup_body:
       accountName: "{{ vme_manager.tenant }}"
       username: "{{ vme_manager.admin_user }}"
@@ -58,7 +58,7 @@
     body_format: form-urlencoded
     body:
       username: "{{ vme_manager.admin_user }}"
-      password: "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+      password: "{{ vme_manager.admin_password }}"
     return_content: true
   delegate_to: "{{ probe_from }}"
   register: vme_login

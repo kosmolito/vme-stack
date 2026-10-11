@@ -101,9 +101,9 @@ changed or deleted afterwards:
 
 - `vme_groups`: the Manager groups.
 - `vme_clouds`: `type: hvm` is the HPE VM private cloud the HVM clusters live in;
-  `type: vmware` is a vCenter cloud (`vcenter`: URL, `credentials` = a vault
-  variable with {username, password} as for the BMCs, datacenter, optionally one
-  vCenter cluster), which the Manager then syncs; a read-only vCenter role is
+  `type: vmware` is a vCenter cloud (`vcenter`: URL, `username` and `password`
+  from the vault as for the BMCs, datacenter, optionally one vCenter cluster),
+  which the Manager then syncs; a read-only vCenter role is
   enough. Once the cloud is up, its existing VMs are imported into the Manager as
   unmanaged VMs (nothing changes in vCenter); `import_existing: false` skips that.
   `groups` lists the groups the cloud is in; it can be several.
@@ -112,7 +112,17 @@ changed or deleted afterwards:
   its cloud's first group, or in `group` (one of the cloud's groups).
 
 The Manager reaches every cluster's hosts with one key pair:
-`vme_manager.ssh_private_key` / `ssh_public_key` (vault variables).
+`vme_manager.ssh_private_key` / `ssh_public_key` (from the vault).
+
+## Values and secrets
+
+Values in `site.yml` are plain Ansible: a literal, or a template Ansible resolves
+when the value is used. For secrets, reference the vault with a quoted template,
+`"{{ vault_hvm_admin_password }}"` or `"{{ vault_ilo.password }}"`, so they stay
+encrypted; a literal password works too, but sits in the site file in clear text.
+Preflight lists every secret that does not resolve (vault not loaded, variable
+missing). Each BMC has its own
+`username`/`password`; servers with the same login can name the same variable.
 
 ## Mixing
 

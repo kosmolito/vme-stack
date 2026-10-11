@@ -95,17 +95,17 @@
       Check the servers: {{ 'chronyc sources' if chronyd.stat.exists else 'timedatectl timesync-status (timesyncd rejects a root distance over 5 s)' }}
   when: ntp_sync.stdout | default('') | trim != 'yes'
 
-# Password for the admin user (site: admin_password), e.g. for the VME Manager,
+# Password for the admin user (site: hvm_admin_password), e.g. for the VME Manager,
 # which needs user + password to create the cluster. Password SSH login is
 # allowed for this user only; everyone else stays key-only.
 - name: Admin password
-  when: admin_password_var | default("", true) | length > 0
+  when: admin_password | default("", true) | length > 0
   block:
     - name: Set the password of {{ admin_user }}
       ansible.builtin.user:
         name: "{{ admin_user }}"
         # Salt from the host name: same hash on every run, so no change reported.
-        password: "{{ lookup('ansible.builtin.vars', admin_password_var)
+        password: "{{ admin_password
                       | password_hash('sha512', (inventory_hostname ~ admin_user) | hash('sha256') | truncate(16, True, '')) }}"
       become: true
       no_log: true

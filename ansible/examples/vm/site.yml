@@ -31,10 +31,10 @@ vme_manager:
   ip: 192.168.50.20
   hostname: vme-manager
   size: S                             # S = 12 GB / 2 vCPU: give hvm01 at least 32 GB
-  admin_password: vault_vme_admin
+  admin_password: "{{ vault_vme_admin }}"
   datastore: nfs01                    # move the Manager's disk to NFS once the cluster exists
-  ssh_private_key: vault_vme_manager_ssh_private_key   # the Manager's key to the cluster hosts
-  ssh_public_key: vault_vme_manager_ssh_public_key
+  ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # the Manager's key to the cluster hosts
+  ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"
 
 vme_groups:
   - name: poc
@@ -51,7 +51,7 @@ vme_clusters:
 
 defaults:
   platform: manual
-  admin_password: vault_hvm_admin_password   # the Manager logs in with it to build the cluster
+  hvm_admin_password: "{{ vault_hvm_admin_password }}"   # the Manager logs in with it to build the cluster
   ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx vme-stack"]
   nic_layout: dedicated
 

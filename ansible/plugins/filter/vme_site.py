@@ -191,16 +191,16 @@ def vme_site_errors(site, roles_dir):
                 + ", ".join(f"{n}={m}/{c or '-'}" for n, (m, c) in sorted(ifaces.items()))
             )
         present = [by_name[n] for n in members if n in by_name]
-        if any(not h.get("admin_password", defaults.get("admin_password")) for h in present):
-            errs.append(f"{label}: the hosts need admin_password (a vault variable); the Manager logs in with it")
-        if len({h.get("admin_user", defaults.get("admin_user", "hvmadmin")) for h in present}) > 1:
-            errs.append(f"{label}: all hosts need the same admin_user (the Manager uses one SSH login)")
+        if any(not h.get("hvm_admin_password", defaults.get("hvm_admin_password")) for h in present):
+            errs.append(f"{label}: the hosts need hvm_admin_password; the Manager logs in with it")
+        if len({h.get("hvm_admin_user", defaults.get("hvm_admin_user", "hvmadmin")) for h in present}) > 1:
+            errs.append(f"{label}: all hosts need the same hvm_admin_user (the Manager uses one SSH login)")
         # The cluster API takes one SSH password for all hosts (the first host's).
-        pw_vars = {h["name"]: h.get("admin_password", defaults.get("admin_password")) for h in present}
-        if len(set(pw_vars.values())) > 1:
+        pw_refs = {h["name"]: h.get("hvm_admin_password", defaults.get("hvm_admin_password")) for h in present}
+        if len({(v or "").replace(" ", "") for v in pw_refs.values()}) > 1:
             errs.append(
-                f"{label}: all hosts need the same admin_password vault variable (the Manager uses one SSH login): "
-                + ", ".join(f"{n}={v or '-'}" for n, v in sorted(pw_vars.items()))
+                f"{label}: all hosts need the same hvm_admin_password (the Manager uses one SSH login): "
+                + ", ".join(f"{n}={v or '-'}" for n, v in sorted(pw_refs.items()))
             )
         ds = cl.get("datastores", [])
         for n in _dupes([d["name"] for d in ds]):

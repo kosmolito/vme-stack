@@ -36,7 +36,7 @@
       zone:
         config: >-
           {{ vc_zone.json.zone.config | dict2items | rejectattr('key', 'equalto', 'passwordHash') | items2dict
-             | combine({'password': lookup('ansible.builtin.vars', vc.vcenter.credentials_var).password,
+             | combine({'password': vme_vcenter_logins[vc.name].password,
                         'importExisting': 'on'}) }}
     timeout: 120
   delegate_to: "{{ probe_from }}"

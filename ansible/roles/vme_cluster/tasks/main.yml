@@ -13,7 +13,7 @@
 - name: Let the Manager's key into the cluster hosts' admin user
   ansible.builtin.lineinfile:
     path: "/home/{{ hostvars[item].admin_user }}/.ssh/authorized_keys"
-    line: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_public_key_var) }}"
+    line: "{{ vme_manager.ssh_public_key }}"
     create: true
     mode: "0600"
   delegate_to: "{{ item }}"
@@ -27,7 +27,7 @@
     body_format: form-urlencoded
     body:
       username: "{{ vme_manager.admin_user }}"
-      password: "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+      password: "{{ vme_manager.admin_password }}"
   delegate_to: "{{ probe_from }}"
   register: vme_login
   no_log: true
@@ -79,19 +79,6 @@
   delegate_to: "{{ probe_from }}"
   register: zone_list
 
-- name: Check the vCenter credentials in the vault
-  ansible.builtin.assert:
-    that:
-      - lookup('ansible.builtin.vars', item.vcenter.credentials_var, default={}) is mapping
-      - lookup('ansible.builtin.vars', item.vcenter.credentials_var, default={}).username | default('') | length > 0
-      - lookup('ansible.builtin.vars', item.vcenter.credentials_var, default={}).password | default('') | length > 0
-    fail_msg: "cloud {{ item.name }}: vault variable {{ item.vcenter.credentials_var }} must be {username, password}"
-    quiet: true
-  loop: "{{ vme_clouds | selectattr('type', 'equalto', 'vmware') }}"
-  loop_control:
-    label: "{{ item.name }}: {{ item.vcenter.credentials_var }}"
-  no_log: true
-
 - name: Create clouds
   ansible.builtin.uri:
     url: "{{ vme_api }}/zones"
@@ -112,7 +99,7 @@
     status_code: [200, 201]
     timeout: 120
   vars:
-    vc_cred: "{{ lookup('ansible.builtin.vars', item.vcenter.credentials_var) if item.type == 'vmware' else {} }}"
+    vc_cred: "{{ vme_vcenter_logins[item.name] if item.type == 'vmware' else {} }}"
     vc_url: "{{ item.vcenter.url | default('') | regex_replace('/+$', '') }}"
   delegate_to: "{{ probe_from }}"
   loop: "{{ vme_clouds | rejectattr('name', 'in', zone_list.json.zones | map(attribute='name')) }}"
@@ -196,7 +183,7 @@
   ansible.builtin.set_fact:
     key_match: "{{ key_list.json.keyPairs | selectattr('publicKey', 'search', '^' ~ (pub.split()[:2] | join(' ') | regex_escape)) | list }}"
   vars:
-    pub: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_public_key_var) }}"
+    pub: "{{ vme_manager.ssh_public_key }}"
 
 - name: Store the Manager's SSH key pair
   ansible.builtin.uri:
@@ -208,8 +195,8 @@
     body:
       keyPair:
         name: "{{ vme_manager.hostname }}-ssh"
-        publicKey: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_public_key_var) }}"
-        privateKey: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_private_key_var) }}"
+        publicKey: "{{ vme_manager.ssh_public_key }}"
+        privateKey: "{{ vme_manager.ssh_private_key }}"
   delegate_to: "{{ probe_from }}"
   register: key_new
   when: key_match | length == 0

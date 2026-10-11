@@ -286,9 +286,8 @@
           "default": "vmeadmin"
         },
         "admin_password": {
-          "description": "Name of a vault variable holding the admin password; never the password itself.",
-          "type": "string",
-          "pattern": "^[a-z_][a-z0-9_]*$"
+          "description": "Password of admin_user on the Manager VM and in the Manager (best a vault reference).",
+          "$ref": "#/$defs/secret"
         },
         "tenant": {
           "description": "Master tenant name set at first-time setup. Default: site.",
@@ -301,9 +300,8 @@
           "pattern": "^[^@\\s]+@[^@\\s]+$"
         },
         "license_key": {
-          "description": "Name of a vault variable holding the VME license key. Omit for trial.",
-          "type": "string",
-          "pattern": "^[a-z_][a-z0-9_]*$"
+          "description": "VME license key (best a vault reference). Omit for the trial.",
+          "$ref": "#/$defs/secret"
         },
         "datastore": {
           "description": "Cluster datastore (a datastores name of the cluster that holds vme_manager.host) to move the Manager VM's disk to once the cluster exists, e.g. shared NFS instead of the host's local disk. Done through the Manager's own server reconfigure; the local copy is kept.",
@@ -316,14 +314,12 @@
           "default": false
         },
         "ssh_private_key": {
-          "description": "Vault variable with the private key the Manager uses to SSH into the hosts of every cluster (a key just for the Manager). Required with vme_clusters.",
-          "type": "string",
-          "pattern": "^[a-z_][a-z0-9_]*$"
+          "description": "Private key the Manager uses to SSH into the hosts of every cluster (a key just for the Manager; best a vault reference). Required with vme_clusters.",
+          "$ref": "#/$defs/secret"
         },
         "ssh_public_key": {
-          "description": "Vault variable with the matching public key; added to the cluster hosts' admin user.",
-          "type": "string",
-          "pattern": "^[a-z_][a-z0-9_]*$"
+          "description": "The matching public key, added to the cluster hosts' admin user: the key line itself or a vault reference.",
+          "$ref": "#/$defs/secret"
         }
       }
     },
@@ -385,7 +381,8 @@
             "additionalProperties": false,
             "required": [
               "url",
-              "credentials",
+              "username",
+              "password",
               "datacenter"
             ],
             "properties": {
@@ -394,10 +391,13 @@
                 "type": "string",
                 "pattern": "^https://[^\\s/]+(/\\S*)?$"
               },
-              "credentials": {
-                "description": "Name of a vault variable holding {username, password} of the vCenter user (a read-only role is enough for the Manager's sync). Clouds on the same vCenter can share it; never put secrets here.",
-                "type": "string",
-                "pattern": "^[a-z_][a-z0-9_]*$"
+              "username": {
+                "description": "vCenter user (a read-only role is enough for the Manager's sync): a plain value or a vault reference.",
+                "$ref": "#/$defs/secret"
+              },
+              "password": {
+                "description": "vCenter password (best a vault reference).",
+                "$ref": "#/$defs/secret"
               },
               "datacenter": {
                 "type": "string",
@@ -413,6 +413,10 @@
                 "description": "Import the vCenter's existing VMs into the Manager (instances in the Manager's records; nothing changes in vCenter), switched on once the cloud's first sync is done. false skips the import.",
                 "type": "boolean",
                 "default": true
+              },
+              "credentials": {
+                "description": "vcenter.credentials is replaced by vcenter.username and vcenter.password, e.g. username: \"{{ vault_vcenter.username }}\", password: \"{{ vault_vcenter.password }}\".",
+                "not": {}
               }
             }
           }
@@ -585,8 +589,8 @@
         "platform": {
           "$ref": "#/$defs/platform"
         },
-        "admin_user": {
-          "description": "Admin user created by the seed (key login + passwordless sudo).",
+        "hvm_admin_user": {
+          "description": "Admin user on the HVM hosts, created by the install (key login + passwordless sudo). Not the Manager's admin (vme_manager.admin_user).",
           "type": "string",
           "pattern": "^[a-z_][a-z0-9_-]{0,31}$",
           "default": "hvmadmin"
@@ -661,10 +665,17 @@
           ],
           "default": "dedicated"
         },
+        "hvm_admin_password": {
+          "description": "Password of hvm_admin_user (best a vault reference). Set in post-install; password SSH login is allowed for that user only. Needed by vme_clusters (the Manager logs in with it); all hosts of a cluster must use the same value.",
+          "$ref": "#/$defs/secret"
+        },
+        "admin_user": {
+          "description": "admin_user is renamed hvm_admin_user (the hosts' admin user; the Manager's is vme_manager.admin_user).",
+          "not": {}
+        },
         "admin_password": {
-          "description": "Name of a vault variable with a password for admin_user. Set in post-install, password SSH login allowed for that user only. Needed by vme_clusters (the Manager logs in with it); all hosts of a cluster must name the same variable (one login for the whole cluster).",
-          "type": "string",
-          "pattern": "^[a-z_][a-z0-9_]*$"
+          "description": "admin_password is renamed hvm_admin_password, and takes a vault reference: hvm_admin_password: \"{{ vault_hvm_admin_password }}\".",
+          "not": {}
         }
       }
     },
@@ -737,21 +748,24 @@
           }
         },
         "bmc": {
-          "description": "BMC (iLO/iDRAC) for platform redfish. 'credentials' names a vault variable holding {username, password}; never put secrets here.",
+          "description": "BMC (iLO/iDRAC) for platform redfish, with its own login: username and password (best vault references).",
           "type": "object",
           "additionalProperties": false,
           "required": [
             "address",
-            "credentials"
+            "username",
+            "password"
           ],
           "properties": {
             "address": {
               "type": "string",
               "minLength": 1
             },
-            "credentials": {
-              "type": "string",
-              "pattern": "^[a-z_][a-z0-9_]*$"
+            "username": {
+              "$ref": "#/$defs/secret"
+            },
+            "password": {
+              "$ref": "#/$defs/secret"
             },
             "validate_certs": {
               "type": "boolean",
@@ -761,14 +775,18 @@
               "description": "Let the pipeline set BIOS BootMode=Uefi and Secure Boot off before the install. Off by default: the customer's BIOS is not touched unless asked.",
               "type": "boolean",
               "default": false
+            },
+            "credentials": {
+              "description": "bmc.credentials is replaced by bmc.username and bmc.password, e.g. username: \"{{ vault_ilo.username }}\", password: \"{{ vault_ilo.password }}\".",
+              "not": {}
             }
           }
         },
         "platform": {
           "$ref": "#/$defs/platform"
         },
-        "admin_user": {
-          "$ref": "#/$defs/host_settings/properties/admin_user"
+        "hvm_admin_user": {
+          "$ref": "#/$defs/host_settings/properties/hvm_admin_user"
         },
         "ssh_keys": {
           "$ref": "#/$defs/host_settings/properties/ssh_keys"
@@ -780,6 +798,12 @@
           "description": "Raw autoinstall storage section for edge cases (RAID, partitioning, ...), written verbatim into the seed. Instead of boot_disk.",
           "type": "object",
           "minProperties": 1
+        },
+        "hvm_admin_password": {
+          "$ref": "#/$defs/host_settings/properties/hvm_admin_password"
+        },
+        "admin_user": {
+          "$ref": "#/$defs/host_settings/properties/admin_user"
         },
         "admin_password": {
           "$ref": "#/$defs/host_settings/properties/admin_password"
@@ -818,6 +842,11 @@
         }
       ],
       "description": "A host gets its network either from a nics layout (common cases, generated) or from raw netplan + hpe_vm (edge cases, used verbatim); disk from boot_disk (common) or raw storage (edge cases)."
+    },
+    "secret": {
+      "description": "A password or key. Plain text works, but a vault reference is recommended, e.g. \"{{ vault_hvm_admin }}\" or \"{{ vault_ilo.password }}\" (quoted): Ansible resolves it from the vault (group_vars/all/vault.yml next to the site file) when it is used. Any Ansible template is accepted.",
+      "type": "string",
+      "minLength": 1
     }
   }
 }

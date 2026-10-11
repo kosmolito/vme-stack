@@ -11,6 +11,11 @@ description:
     and maps site fields onto the host variables the roles use. Cross-field rules (unique
     IP/MAC, IP inside the subnet, driver exists) are checked by the preflight role, not here.
   - The whole validated site is also exposed as C(vme_site).
+  - Secrets are written in the site file as templates naming vault variables
+    (C("{{ vault_x }}")). They are passed on as templates (trusted), so they resolve
+    from the vault when a task uses them; C(vme_site) keeps them as plain text.
+    C(secrets)/C(site_secrets) map each secret field to its value and
+    C(secret_refs)/C(site_secret_refs) to its template, for preflight.
 """
 
 import ipaddress
@@ -19,15 +24,21 @@ import os
 from pathlib import Path
 
 from ansible.errors import AnsibleParserError
+from ansible.template import trust_as_template
 
 from ansible.plugins.inventory import BaseInventoryPlugin
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas" / "site.schema.json"
 
 # Defaults the schema documents; applied here so roles get one value per variable.
-DEFAULTS = {"admin_user": "hvmadmin", "boot_disk": "auto", "nic_layout": "dedicated"}
+DEFAULTS = {"hvm_admin_user": "hvmadmin", "boot_disk": "auto", "nic_layout": "dedicated"}
 DEPLOY_DEFAULTS = {"name": "deploy", "www_root": "/srv/vme-stack/www", "work_dir": "/srv/vme-stack/work", "port": 8080}
 SSH_OPTS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30"
+
+
+def _secret(value):
+    """A site value that may be a vault reference: trusted, so Ansible renders it on use."""
+    return trust_as_template(value) if isinstance(value, str) else value
 
 
 def _message(err):
@@ -95,8 +106,14 @@ class InventoryModule(BaseInventoryPlugin):
         self.inventory.set_variable("all", "vme_site", site)
         self.inventory.set_variable("all", "vme_site_file", os.path.abspath(path))
 
+        # Secrets of the whole site (Manager, vCenters): field -> value (rendered on
+        # use) and field -> the template as written, for preflight's messages.
+        site_secret_refs = {}
         if "vme_manager" in site:
             m = site["vme_manager"]
+            for k in ("admin_password", "license_key", "ssh_private_key", "ssh_public_key"):
+                if k in m:
+                    site_secret_refs[f"vme_manager.{k}"] = m[k]
             self.inventory.add_group("vme_manager")
             self.inventory.set_variable(
                 "all",
@@ -108,7 +125,7 @@ class InventoryModule(BaseInventoryPlugin):
                     "url": m.get("url", f"https://{m['ip']}"),
                     "size": m.get("size", "S"),
                     "admin_user": m.get("admin_user", "vmeadmin"),
-                    "admin_password_var": m["admin_password"],
+                    "admin_password": _secret(m["admin_password"]),
                     "netmask": str(ipaddress.ip_network(f"0.0.0.0/{net['prefix']}").netmask),
                     "gateway": net["gateway"],
                     "dns": net["dns"],
@@ -116,11 +133,11 @@ class InventoryModule(BaseInventoryPlugin):
                     "vme_iso": site["media"].get("vme_iso"),
                     "tenant": m.get("tenant", site["site"]),
                     "email": m.get("email", f"{m.get('admin_user', 'vmeadmin')}@{net['domain']}"),
-                    "license_key_var": m.get("license_key"),
+                    "license_key": _secret(m.get("license_key")),
                     "datastore": m.get("datastore"),
                     "autostart": m.get("autostart", False),
-                    "ssh_private_key_var": m.get("ssh_private_key"),
-                    "ssh_public_key_var": m.get("ssh_public_key"),
+                    "ssh_private_key": _secret(m.get("ssh_private_key")),
+                    "ssh_public_key": _secret(m.get("ssh_public_key")),
                 },
             )
 
@@ -139,7 +156,6 @@ class InventoryModule(BaseInventoryPlugin):
                         {
                             "vcenter": {
                                 "url": c["vcenter"]["url"],
-                                "credentials_var": c["vcenter"]["credentials"],
                                 "datacenter": c["vcenter"]["datacenter"],
                                 "cluster": c["vcenter"].get("cluster", ""),
                                 "import_existing": c["vcenter"].get("import_existing", True),
@@ -151,6 +167,20 @@ class InventoryModule(BaseInventoryPlugin):
                 }
                 for c in site.get("vme_clouds", [])
             ],
+        )
+        # vCenter logins by cloud name, kept out of vme_clouds (loop items get printed).
+        vcenter_logins = {}
+        for c in site.get("vme_clouds", []):
+            if c["type"] == "vmware":
+                vcenter_logins[c["name"]] = {k: _secret(c["vcenter"][k]) for k in ("username", "password")}
+                for k in ("username", "password"):
+                    site_secret_refs[f"vme_clouds[{c['name']}].vcenter.{k}"] = c["vcenter"][k]
+        self.inventory.set_variable("all", "vme_vcenter_logins", vcenter_logins)
+        self.inventory.set_variable("all", "site_secret_refs", site_secret_refs)
+        self.inventory.set_variable(
+            "all",
+            "site_secrets",
+            {k: _secret(v) for k, v in site_secret_refs.items()},
         )
         self.inventory.set_variable(
             "all",
@@ -182,15 +212,18 @@ class InventoryModule(BaseInventoryPlugin):
             s = {
                 **DEFAULTS,
                 **site["defaults"],
-                **{k: v for k, v in h.items() if k in DEFAULTS or k in ("platform", "ssh_keys", "admin_password")},
+                **{k: v for k, v in h.items() if k in DEFAULTS or k in ("platform", "ssh_keys", "hvm_admin_password")},
             }
+            secret_refs = {}
+            if "hvm_admin_password" in s:
+                secret_refs["hvm_admin_password"] = s["hvm_admin_password"]
             hv = {
                 **conn,
                 "ansible_host": h["ip"],
-                "ansible_user": s["admin_user"],
+                "ansible_user": s["hvm_admin_user"],
                 "platform": s["platform"],
-                "admin_user": s["admin_user"],
-                "admin_password_var": s.get("admin_password"),
+                "admin_user": s["hvm_admin_user"],
+                "admin_password": _secret(s.get("hvm_admin_password")),
                 "ssh_keys": s["ssh_keys"],
                 "boot_disk": s["boot_disk"],
                 "ip": h["ip"],
@@ -235,7 +268,14 @@ class InventoryModule(BaseInventoryPlugin):
             if "proxy" in net:
                 hv["proxy"] = net["proxy"]
             if "bmc" in h:
-                hv["bmc"] = h["bmc"]
+                # The login stays out of the bmc dict (task names and labels show it).
+                hv["bmc"] = {k: v for k, v in h["bmc"].items() if k not in ("username", "password")}
+                hv["bmc_username"] = _secret(h["bmc"]["username"])
+                hv["bmc_password"] = _secret(h["bmc"]["password"])
+                secret_refs["bmc.username"] = h["bmc"]["username"]
+                secret_refs["bmc.password"] = h["bmc"]["password"]
+            hv["secret_refs"] = secret_refs
+            hv["secrets"] = {k: _secret(v) for k, v in secret_refs.items()}
 
             self.inventory.add_host(h["name"], group="hvm")
             if site.get("vme_manager", {}).get("host") == h["name"]:

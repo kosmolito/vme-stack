@@ -2,8 +2,8 @@
 # Stages 1-5 for HVM hosts, driven by a site file:
 #   ansible-playbook hvm_hosts.yml -i ../sites/<site>/site.yml [--limit <host>]
 # Reinstall a host: -e force_reinstall=true --limit <host>
-# Redfish hosts: add the vault file with the BMC credentials, e.g.
-#   -e @secrets.vault.yml --ask-vault-pass
+# Secrets (BMC logins, admin password) come from the site's vault
+# (group_vars/all/vault.yml next to the site file): add --ask-vault-pass.
 - name: Preflight
   ansible.builtin.import_playbook: preflight.yml
 

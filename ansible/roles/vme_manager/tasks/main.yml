@@ -97,7 +97,7 @@
           - --user
           - "{{ vme_manager.admin_user }}"
           - --pass
-          - "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+          - "{{ vme_manager.admin_password }}"
           - --qcow
           - "{{ vme_image_url }}"
           - --size
@@ -135,7 +135,7 @@
     - name: Show hpe-vm output
       ansible.builtin.debug:
         msg: "{{ hpe_vm_result.stdout_lines[1:]
-                 | map('replace', lookup('ansible.builtin.vars', vme_manager.admin_password_var), '********') | list }}"
+                 | map('replace', vme_manager.admin_password, '********') | list }}"
 
     - name: Check hpe-vm succeeded
       ansible.builtin.assert:

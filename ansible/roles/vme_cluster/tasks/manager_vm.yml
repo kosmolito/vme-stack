@@ -113,7 +113,7 @@
     body:
       server:
         sshUsername: "{{ vme_manager.admin_user }}"
-        sshPassword: "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+        sshPassword: "{{ vme_manager.admin_password }}"
         provisionSiteId: "{{ vme_group_ids[vme_manager_group] | int }}"
       installAgent: false
     timeout: 120

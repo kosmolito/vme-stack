@@ -93,16 +93,6 @@
 # --- BMCs (platform redfish) ------------------------------------------------
 # Redfish calls go from the controller (boot_redfish delegates to localhost).
 
-- name: Check the BMC credentials are provided
-  ansible.builtin.set_fact:
-    bmc_problems: >-
-      {{ [] if (creds is mapping and creds.username is defined and creds.password is defined)
-         else ['BMC credentials: variable ' ~ bmc.credentials ~ ' with username and password is not defined '
-               ~ '(pass the vault file, e.g. -e @secrets.vault.yml --ask-vault-pass)'] }}
-  vars:
-    creds: "{{ lookup('ansible.builtin.vars', bmc.credentials, default='') }}"
-  when: platform == 'redfish'
-
 - name: Check the Redfish service on {{ bmc.address | default('-') }}
   ansible.builtin.uri:
     url: "https://{{ bmc.address }}/redfish/v1/"
@@ -113,14 +103,40 @@
   failed_when: false
   when: platform == 'redfish'
 
-# --- DNS and NTP, probed from where the hosts live ---------------------------
-
 - name: Note when netplan's own syntax check is not available
   run_once: true
   ansible.builtin.set_fact:
     netplan_unavailable: >-
       {{ (netplan_check.stdout_lines | select('match', '[{]') | last | from_json).get('_unavailable')
          if netplan_check is defined and netplan_check is not skipped else none }}
+
+# --- Secrets ------------------------------------------------------------------
+# Every vault reference in the site file ("{{ vault_x }}") must resolve: vault
+# file loaded, variable defined, not empty. Only the references are shown.
+- name: Check the site's secrets resolve (Manager, vCenters)
+  run_once: true
+  ansible.builtin.set_fact:
+    site_secret_problems: "{{ unresolved }}"
+  vars:
+    values: "{{ site_secrets }}"
+    refs: "{{ site_secret_refs }}"
+    unresolved: &unresolved >-
+      {%- set out = [] -%}
+      {%- for field, ref in refs.items() if values[field] | default('', true) | string | length == 0 -%}
+      {{- out.append(field ~ ': ' ~ ref ~ ' is not defined or empty (vault file group_vars/all/vault.yml'
+                     ~ ' next to the site file; --ask-vault-pass or --vault-password-file)') -}}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Check this host's secrets resolve (admin password, BMC login)
+  ansible.builtin.set_fact:
+    secret_problems: "{{ unresolved }}"
+  vars:
+    values: "{{ secrets }}"
+    refs: "{{ secret_refs }}"
+    unresolved: *unresolved
+
+# --- DNS and NTP, probed from where the hosts live ---------------------------
 
 # Names the hosts must resolve with the site's DNS servers (they use exactly
 # these): the Manager URL's name must give the Manager's IP on every server
@@ -211,7 +227,7 @@
       {{ controller_problems + net_problems +
          (deploy_check.stdout_lines | map('regex_replace', '^', deploy_host ~ ': ') | list) +
          ([('netplan: ' ~ netplan_result)] if netplan_result else []) +
-         (bmc_problems | default([])) +
+         site_secret_problems + secret_problems +
          (['BMC ' ~ bmc.address ~ ': Redfish service not reachable from the controller ('
            ~ (bmc_root.msg | default(bmc_root.status | default('?'))) ~ ')']
            if platform == 'redfish' and (bmc_root.status | default(0)) != 200 else []) }}

@@ -33,11 +33,11 @@ vme_manager:
   hostname: vme-manager
   url: https://vme-manager.example.com   # A record -> ip on every network.dns server (preflight checks)
   size: M
-  admin_password: vault_vme_admin
-  # license_key: vault_vme_license    # omit for trial
+  admin_password: "{{ vault_vme_admin }}"
+  # license_key: "{{ vault_vme_license }}"    # omit for trial
   datastore: nfs01                    # a datastore of the cluster that holds hvm01
-  ssh_private_key: vault_vme_manager_ssh_private_key   # the Manager's key to every cluster's hosts
-  ssh_public_key: vault_vme_manager_ssh_public_key
+  ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # the Manager's key to every cluster's hosts
+  ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"
 
 # Manager objects, found by name or created. A cloud can be in several groups;
 # a cluster belongs to one cloud (type hvm) and one of that cloud's groups.
@@ -53,7 +53,8 @@ vme_clouds:
     groups: [production]
     vcenter:
       url: https://vcenter.example.com/sdk
-      credentials: vault_vcenter        # {username, password} in the vault; a read-only vCenter role is enough
+      username: "{{ vault_vcenter.username }}"
+      password: "{{ vault_vcenter.password }}"        # {username, password} in the vault; a read-only vCenter role is enough
       datacenter: DC1
       # cluster: Cluster01            # only this vCenter cluster; default the whole datacenter
       # import_existing: false        # default true: the vCenter's VMs appear in the Manager (unmanaged)
@@ -67,27 +68,31 @@ vme_clusters:
 
 defaults:
   platform: redfish
-  admin_password: vault_hvm_admin_password
+  hvm_admin_password: "{{ vault_hvm_admin_password }}"
   ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx vme-stack"]
   nic_layout: dedicated
 
 hosts:
   - name: hvm01
     ip: 10.20.0.21
-    bmc: { address: 10.20.1.21, credentials: vault_ilo, bios_setup: true }   # opt-in: UEFI + Secure Boot off
+    bmc:
+      address: 10.20.1.21
+      username: "{{ vault_ilo.username }}"     # secrets: references to the vault, see vault.example.yml
+      password: "{{ vault_ilo.password }}"
+      bios_setup: true                         # opt-in: UEFI + Secure Boot off
     nics:
       mgmt: ["b4:7a:f1:00:00:01", "b4:7a:f1:00:00:02"]
       compute: ["b4:7a:f1:00:00:03", "b4:7a:f1:00:00:04"]
   - name: hvm02
     ip: 10.20.0.22
-    bmc: { address: 10.20.1.22, credentials: vault_ilo }
+    bmc: { address: 10.20.1.22, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}" }
     boot_disk: { model: "*NS204i*" }  # installer match keys (globs); auto = smallest disk
     nics:
       mgmt: ["b4:7a:f1:00:01:01", "b4:7a:f1:00:01:02"]
       compute: ["b4:7a:f1:00:01:03", "b4:7a:f1:00:01:04"]
   - name: hvm03
     ip: 10.20.0.23
-    bmc: { address: 10.20.1.23, credentials: vault_idrac }
+    bmc: { address: 10.20.1.23, username: "{{ vault_idrac.username }}", password: "{{ vault_idrac.password }}" }
     nics:
       mgmt: ["d0:94:66:00:00:01", "d0:94:66:00:00:02"]
       compute: ["d0:94:66:00:00:03", "d0:94:66:00:00:04"]

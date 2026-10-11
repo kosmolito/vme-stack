@@ -51,7 +51,7 @@
           sshUsername: "{{ hostvars[cl.hosts[0]].admin_user }}"
           # The Manager only probes port 22 without a password and never logs in
           # (2026-10-10); HPE's docs also ask for user + password.
-          sshPassword: "{{ lookup('ansible.builtin.vars', hostvars[cl.hosts[0]].admin_password_var) }}"
+          sshPassword: "{{ hostvars[cl.hosts[0]].admin_password }}"
           network: {name: "{{ hostvars[cl.hosts[0]].mgmt_interface }}"}
           cpuPlacementMode: unmanaged
           config:

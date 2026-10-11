@@ -1,6 +1,13 @@
 # Reference site: every setting of the site file, with what it does. Copy this
 # directory to start a site, then delete what you do not need (README.md).
 # Schema: ansible/schemas/site.schema.json. Values marked "default" can be left out.
+#
+# Values are plain Ansible: literal, or a template Ansible resolves when the value
+# is used. For secrets (lines marked "secret") a vault reference is recommended,
+# a quoted template naming a variable in the vault: "{{ vault_name }}" or
+# "{{ vault_name.field }}". The vault is group_vars/all/vault.yml next to this
+# file (ansible-vault encrypted, template: vault.example.yml). A literal password
+# works too, but then it sits unencrypted in this file.
 # Simpler starting points: ansible/examples/vm and ansible/examples/baremetal.
 #
 # This site: five HVM hosts on the mgmt network 10.30.0.0/24 (VLAN 100), two
@@ -39,14 +46,14 @@ deploy_server:                        # builds and serves the ISOs; DNS/NTP/SSH 
   connection: ssh                     # default; local = the playbook runs on the deploy server itself
 
 access:                               # how the controller (where the playbook/EE runs) reaches everything
-  ssh_private_key: vme_stack          # next to this file (relative to it); matches defaults.ssh_keys; never commit it
+  ssh_private_key: vme_stack          # a file path (relative to this file), not a vault reference; never commit it
   # jump: admin@bastion.example.com   # SSH jump host to the deploy server and the hosts, if needed
 
 defaults:                             # every host gets these unless it sets its own
   platform: redfish                   # redfish (iLO/iDRAC virtual media) | manual (you boot the ISO URL)
-  admin_user: hvmadmin                # default; created by the install, key login + passwordless sudo
-  admin_password: vault_hvm_admin_password   # vault variable; the Manager logs in with it (needed by vme_clusters)
-  ssh_keys:                           # public keys for admin_user (the first matches access.ssh_private_key)
+  hvm_admin_user: hvmadmin            # default; the hosts' admin user, created by the install (key login + sudo)
+  hvm_admin_password: "{{ vault_hvm_admin_password }}"   # secret; the Manager logs in with it (needed by vme_clusters)
+  ssh_keys:                           # public keys for hvm_admin_user (the first matches access.ssh_private_key)
     - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx vme-stack"
   boot_disk: auto                     # default: the smallest disk; or /dev/sda, or match keys (see hosts)
   nic_layout: dedicated               # default; dedicated: bond0 = mgmt, bond1 = compute | shared: bond0 only
@@ -56,7 +63,8 @@ hosts:
     ip: 10.30.0.21
     bmc:                              # platform redfish: HPE iLO or Dell iDRAC
       address: 10.30.1.21
-      credentials: vault_ilo          # vault variable with {username, password}
+      username: "{{ vault_ilo.username }}"   # plain (e.g. Administrator) or from the vault
+      password: "{{ vault_ilo.password }}"   # secret; per host, or shared by naming the same variable
       validate_certs: false           # default; true when the BMC has a trusted certificate
       bios_setup: true                # default false; true: set UEFI boot + Secure Boot off first
     nics:                             # MACs per role; each role becomes a bond (1-4 members)
@@ -65,7 +73,7 @@ hosts:
 
   - name: hvm02
     ip: 10.30.0.22
-    bmc: { address: 10.30.1.22, credentials: vault_ilo }
+    bmc: { address: 10.30.1.22, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}" }
     boot_disk: { model: "*NS204i*" }  # installer match keys, all must match: serial, model, vendor (globs),
     #                                   path (/dev/... glob), id_path (glob), ssd (bool), size: smallest|largest
     nics:
@@ -74,7 +82,7 @@ hosts:
 
   - name: hvm03
     ip: 10.30.0.23
-    bmc: { address: 10.30.1.23, credentials: vault_idrac }
+    bmc: { address: 10.30.1.23, username: root, password: "{{ vault_idrac.password }}" }   # a literal works too
     boot_disk: /dev/sda               # a kernel name works too, but can change between boots
     nics:
       layout: dedicated               # per host; overrides defaults.nic_layout
@@ -84,15 +92,15 @@ hosts:
   - name: hvm04                       # a VM: you attach and boot the ISO URL the run prints
     ip: 10.30.0.24
     platform: manual                  # per host; overrides defaults.platform (no bmc then)
-    admin_user: hvmadmin              # admin_user, admin_password, ssh_keys, boot_disk: per host too
-    #                                   (admin_user and admin_password: the same on all hosts of a cluster)
+    hvm_admin_user: hvmadmin          # hvm_admin_user, hvm_admin_password, ssh_keys, boot_disk: per host too
+
     nics:
       layout: shared                  # bond0 carries mgmt (untagged: native VLAN) and VM traffic
       mgmt: ["00:50:56:00:30:24"]
 
   - name: hvm05                       # edge case: LACP + RAID 1, written verbatim into the install
     ip: 10.30.0.25
-    bmc: { address: 10.30.1.25, credentials: vault_ilo }
+    bmc: { address: 10.30.1.25, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}" }
     netplan:                          # raw netplan instead of nics (checked by netplan's parser in preflight)
       version: 2
       ethernets:
@@ -135,15 +143,15 @@ vme_manager:                          # the Manager VM, installed with HPE's hpe
   hostname: vme-manager
   url: https://vme-manager.example.com   # default https://<ip>; a name must resolve to ip on every dns server
   size: M                             # default S; S = 12 GB / 2 vCPU, M = 16 GB / 4 vCPU, L = 32 GB / 4 vCPU
-  admin_user: vmeadmin                # default; VM admin and the Manager's first admin
-  admin_password: vault_vme_admin     # vault variable
+  admin_user: vmeadmin                # default; the Manager VM's admin and the Manager's first admin
+  admin_password: "{{ vault_vme_admin }}"   # secret
   tenant: Example                     # default: site; master tenant name
   email: vmeadmin@example.com         # default <admin_user>@<network.domain>
-  # license_key: vault_vme_license    # vault variable; omit for the trial
+  # license_key: "{{ vault_vme_license }}"   # secret; omit for the trial
   datastore: nfs-prod                 # move the Manager's disk to this datastore of hvm01's cluster
   autostart: false                    # default (hpe-vm's); true: libvirt starts the VM with its host
-  ssh_private_key: vault_vme_manager_ssh_private_key   # the Manager's key pair to every cluster's hosts
-  ssh_public_key: vault_vme_manager_ssh_public_key
+  ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # secret; the Manager's key to every cluster's hosts
+  ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"     # the key line itself, or from the vault
 
 # Manager objects, joined by name; each is found by name or created, never changed or deleted.
 vme_groups:
@@ -159,7 +167,8 @@ vme_clouds:
     groups: [production]
     vcenter:
       url: https://vcenter.example.com   # /sdk is added when missing
-      credentials: vault_vcenter      # vault variable with {username, password}; a read-only role is enough
+      username: "{{ vault_vcenter.username }}"   # plain or from the vault; a read-only role is enough
+      password: "{{ vault_vcenter.password }}"   # secret
       datacenter: DC1
       cluster: Cluster01              # only this vCenter cluster; default the whole datacenter
       import_existing: true           # default; the vCenter's VMs appear in the Manager (unmanaged)
