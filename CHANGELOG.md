@@ -33,6 +33,10 @@ that section into the release's section (and refuses to release with it empty).
 - Per-host ISOs are named `hvm-<host>.iso` (was `vme-stack-<host>-<seed hash>.iso`);
   the seed hash sits in `hvm-<host>.iso.seed` next to it, so an unchanged seed is
   still not rebuilt. A host that boots an older copy is caught by the install-id check.
+- `media.yml` prints every host's ISO URL, also when nothing was built, and
+  whether the ISO is on the deploy server (an installed host's ISO is removed
+  after its install; `-e force_reinstall=true --limit <host>` builds it again, or
+  `keep_host_iso: true` keeps it). Was: nothing for installed hosts.
 - Fix: `media_server` read the deploy server's state wrongly where `systemctl`
   prints nothing (e.g. without systemd).
 

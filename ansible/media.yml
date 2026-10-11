@@ -26,6 +26,21 @@
         - name: Build and publish the install ISO
           ansible.builtin.import_role:
             name: media
-        - name: Show the ISO URL
-          ansible.builtin.debug:
-            msg: "{{ inventory_hostname }}: {{ host_iso_url }}"
+
+    # The URL of every host, also when nothing was built now: an installed host's
+    # ISO was removed after its install, so say whether it is there.
+    - name: Check the ISO on the deploy server
+      ansible.builtin.stat:
+        path: "{{ media_www_root }}/isos/hvm-{{ inventory_hostname }}.iso"
+        get_checksum: false
+      delegate_to: "{{ deploy_host }}"
+      register: iso_present
+
+    - name: ISO URL
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: {{ media_url }}/isos/hvm-{{ inventory_hostname }}.iso
+          {{ '(built now)' if install_now | bool
+             else '(on the deploy server; host installed already)' if iso_present.stat.exists
+             else '(not on the deploy server: host installed already; build it with -e force_reinstall=true --limit '
+                  ~ inventory_hostname ~ ')' }}
