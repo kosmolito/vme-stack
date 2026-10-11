@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-11
+
 - **The Manager's SSH key pair defaults to your login key**: without
   `vme_manager.ssh_private_key`/`ssh_public_key`, the key pair the Manager uses
   on the cluster hosts is read from `vme_manager.ssh_private_key_file` and
