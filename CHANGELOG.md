@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-11
+
 - **Site file change: SSH keys per login.** `access` is gone. The deploy server's
   login is `deploy_server.user` + `deploy_server.ssh_private_key`; the HVM hosts'
   is `hvm_admin_user` + `defaults.hvm_ssh_private_key` (both may name the same

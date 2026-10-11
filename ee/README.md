@@ -33,6 +33,7 @@ PLATFORMS=linux/amd64,linux/arm64 IMAGE=ghcr.io/<owner>/vme-stack-ee ee/build.sh
 |---|---|
 | 0.1.0 | VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078 |
 | 0.1.1 | VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078 |
+| 0.1.2 | VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078 |
 
 ## Release (GHCR)
 
@@ -73,7 +74,7 @@ it, e.g. `ssh_private_key: ../../keys/deploy_server` resolves to `/keys/deploy_s
 docker run --rm -it --network host \
   -v /srv/vme-stack/sites/acme:/site:ro \
   -v /srv/vme-stack/keys:/keys:ro \
-  vme-stack-ee:0.1.1 \
+  vme-stack-ee:0.1.2 \
   ansible-playbook deploy.yml -i /site/site.yml --vault-password-file /site/.vault_pass
 ```
 
@@ -114,7 +115,7 @@ The image runs natively on Apple Silicon (arm64 variant). What has to be in plac
    passwordless sudo, and the two ISOs at the paths in `site.yml`.
 
 ```bash
-docker run --rm -it -v ~/vme-sites/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:0.1.1 \
+docker run --rm -it -v ~/vme-sites/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:0.1.2 \
   ansible-playbook deploy.yml -i /site/site.yml --ask-vault-pass
 ```
 
@@ -133,9 +134,9 @@ Mount a host directory at `/vme-stack-hotfix`:
 
 ```bash
 mkdir /srv/vme-stack/hotfix
-docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.1 true   # exports the code
+docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.2 true   # exports the code
 vi /srv/vme-stack/hotfix/roles/...                                                       # fix
-docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.1 ansible-playbook ...
+docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.2 ansible-playbook ...
 ```
 
 Every run prints which code it uses, e.g.

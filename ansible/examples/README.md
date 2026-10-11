@@ -29,7 +29,7 @@ DNS, NTP, the DNS records of the Manager URL and NTP server names (on the site's
 DNS servers) and (bare metal) the BMCs, and changes nothing.
 
 ```bash
-alias vme='docker run --rm -it -v $PWD/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:0.1.1'
+alias vme='docker run --rm -it -v $PWD/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:0.1.2'
 vme ansible-playbook preflight.yml -i /site/site.yml --ask-vault-pass
 ```
 
