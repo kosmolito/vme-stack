@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-11
+
 - `ansible-navigator.yaml` in the repository root, for working on vme-stack: runs
   the project image (`vme-stack-ee:latest`) with the clone's own `ansible/` as its
   code (the image's hotfix mount), so changes run in the real EE without a rebuild.
