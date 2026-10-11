@@ -1,0 +1,11 @@
+---
+- name: Collect on {{ inventory_hostname }}
+  ansible.builtin.script:
+    cmd: collect_host.sh
+  become: true
+  register: collected
+  changed_when: false
+  failed_when: false
+
+- name: Fetch and clean up
+  ansible.builtin.import_tasks: fetch.yml

@@ -1,0 +1,58 @@
+---
+# The machines' collections are in bundle_dir as <machine>.tar.gz: note which
+# arrived, then finish_bundle.py unpacks, replaces the secrets and packs.
+- name: Find the collections of the machines
+  ansible.builtin.find:
+    paths: "{{ bundle_dir }}"
+    patterns: "*.tar.gz"
+  register: tarballs
+
+- name: Note which machines were collected
+  ansible.builtin.copy:
+    dest: "{{ bundle_dir }}/COLLECTED.txt"
+    mode: "0600"
+    content: |
+      {% for h in groups['deploy_server'] + groups['hvm'] %}
+      {{ h }}: {{ 'collected' if (h ~ '.tar.gz') in (tarballs.files | map(attribute='path') | map('basename')) else not_collected }}
+      {% endfor %}
+      Manager API: {{ 'collected' if (bundle_dir ~ '/manager-api') is directory else 'not collected' }}
+  vars:
+    not_collected: NOT collected (unreachable, not installed yet, or the login failed; see the run log)
+
+# What to replace: the site's vault as data (every value) and every secret field
+# of the site file as resolved (literal values too). finish_bundle.py walks both.
+- name: Write the values to replace (private, removed below)
+  ansible.builtin.copy:
+    dest: "{{ bundle_dir }}.values"
+    mode: "0600"
+    content: "{{ {'vault': vault_data, 'secrets': secret_values} | to_json }}"
+  vars:
+    vault_file: "{{ hostvars[groups['hvm'][0]].vme_site_file | dirname }}/group_vars/all/vault.yml"
+    vault_data: "{{ lookup('ansible.builtin.file', vault_file, errors='ignore') | default('', true) | from_yaml or {} }}"
+    secret_values: >-
+      {%- set out = [] -%}
+      {%- for h in groups['hvm'] -%}
+      {%-   for v in (hostvars[h].secrets | default({})).values() -%}{{ out.append(v | default('', true) | string) }}{%- endfor -%}
+      {%- endfor -%}
+      {%- for v in (hostvars[groups['hvm'][0]].site_secrets | default({})).values() -%}{{ out.append(v | default('', true) | string) }}{%- endfor -%}
+      {{ out }}
+  no_log: true
+
+# Unpack, replace the secrets, pack: Python only (the EE image has no tar).
+- name: Replace the secrets and pack the bundle
+  ansible.builtin.command:
+    argv: ["{{ ansible_playbook_python }}", "{{ role_path }}/files/finish_bundle.py", "{{ bundle_dir }}", "{{ bundle_dir }}.values"]
+  changed_when: true
+  register: finished
+
+- name: Remove the values file
+  ansible.builtin.file:
+    path: "{{ bundle_dir }}.values"
+    state: absent
+
+- name: Support bundle
+  ansible.builtin.debug:
+    msg:
+      - "{{ finished.stdout_lines[0] }}"
+      - "{{ finished.stdout_lines[1] }}"
+      - "Send this file for support. Secrets are replaced (REDACTED.txt inside); check it before sending if in doubt."

@@ -1,0 +1,11 @@
+---
+- name: Collect on {{ inventory_hostname }}
+  ansible.builtin.script:
+    cmd: "collect_deploy_server.sh {{ vme_site.deploy_server.www_root | default('/srv/vme-stack/www') | quote }}"
+  become: true
+  register: collected
+  changed_when: false
+  failed_when: false
+
+- name: Fetch and clean up
+  ansible.builtin.import_tasks: fetch.yml

@@ -1,0 +1,74 @@
+---
+# The Manager through its API, from probe_from (as the Manager roles do):
+# version, license, health with the appliance's own logs and alarms, and every
+# object vme-stack creates, with status. JSON as the API returns it.
+- name: Log in to the Manager
+  ansible.builtin.uri:
+    url: "https://{{ vme_manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
+    method: POST
+    validate_certs: false
+    body_format: form-urlencoded
+    body:
+      username: "{{ vme_manager.admin_user }}"
+      password: "{{ vme_manager.admin_password }}"
+  delegate_to: "{{ probe_from }}"
+  register: collect_login
+  failed_when: false
+  no_log: true
+
+- name: Note a failed Manager login
+  ansible.builtin.copy:
+    dest: "{{ hostvars['localhost'].bundle_dir }}/manager-api-login-failed.txt"
+    content: "HTTP {{ collect_login.status | default('?') }} {{ collect_login.msg | default('') }}\n"
+    mode: "0600"
+  delegate_to: localhost
+  changed_when: false     # the bundle on the controller, not the Manager
+  when: collect_login.json.access_token is not defined
+
+- name: Read from the Manager API
+  ansible.builtin.uri:
+    url: "https://{{ vme_manager.ip }}/api/{{ item.path }}"
+    validate_certs: false
+    headers:
+      Authorization: "Bearer {{ collect_login.json.access_token }}"
+    return_content: true
+    timeout: 60
+  delegate_to: "{{ probe_from }}"
+  register: collect_api
+  failed_when: false
+  when: collect_login.json.access_token is defined
+  loop:
+    - {name: ping, path: ping}
+    - {name: appliance-settings, path: appliance-settings}
+    - {name: license, path: license}
+    - {name: health, path: health}
+    - {name: health-logs, path: "health/logs?max=2000"}
+    - {name: health-alarms, path: health/alarms}
+    - {name: groups, path: groups}
+    - {name: clouds, path: zones}
+    - {name: clusters, path: clusters}
+    - {name: servers, path: "servers?max=500"}
+    - {name: instances, path: "instances?max=500"}
+    - {name: processes, path: "processes?max=200"}
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Directory for the API answers
+  ansible.builtin.file:
+    path: "{{ hostvars['localhost'].bundle_dir }}/manager-api"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  changed_when: false     # the bundle on the controller, not the Manager
+  when: collect_login.json.access_token is defined
+
+- name: Save the API answers
+  ansible.builtin.copy:
+    dest: "{{ hostvars['localhost'].bundle_dir }}/manager-api/{{ item.item.name }}.json"
+    content: "{{ item.json | default(item.content | default(item.msg | default(''))) | to_nice_json }}\n"
+    mode: "0600"
+  delegate_to: localhost
+  changed_when: false     # the bundle on the controller, not the Manager
+  loop: "{{ collect_api.results | default([]) | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.name }}"

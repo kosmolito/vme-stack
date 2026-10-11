@@ -20,7 +20,21 @@ else
     echo "vme-stack $VME_STACK_VERSION" >&2
 fi
 
+# Run logs and VME_STACK_DEBUG support bundles go to /logs when it is mounted
+# (e.g. -v $PWD/logs:/logs); without it they stay in the container.
+if [ -z "${VME_STACK_LOG_DIR:-}" ] && [ -d /logs ]; then
+    if [ -w /logs ]; then
+        export VME_STACK_LOG_DIR=/logs
+    else
+        echo "vme-stack: /logs is mounted but not writable for uid $(id -u); logs stay in the container" >&2
+    fi
+fi
+
 cd "$CODE"
 export ANSIBLE_CONFIG="$CODE/ansible.cfg"
-# The EE entrypoint (user/passwd handling of ansible-runner images) under dumb-init.
-exec /opt/builder/bin/entrypoint dumb-init "$@"
+# The EE entrypoint (user/passwd handling of ansible-runner images) under dumb-init;
+# every command goes through tools/vme_stack_run.py (run log, VME_STACK_DEBUG);
+# a hotfix directory from an older image has none: then the image's.
+RUNNER="$CODE/tools/vme_stack_run.py"
+[ -f "$RUNNER" ] || RUNNER="$IMAGE_CODE/tools/vme_stack_run.py"
+exec /opt/builder/bin/entrypoint dumb-init /usr/bin/python3.12 "$RUNNER" "$@"

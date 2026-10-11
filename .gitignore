@@ -50,5 +50,6 @@ ee/_stage/
 .venv/
 .task/
 
-# Log files
+# Log files, run logs and support bundles (-v $PWD/logs:/logs)
 *.log
+logs/

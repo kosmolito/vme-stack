@@ -1,0 +1,54 @@
+---
+# Support bundle: logs and state of the controller, the deploy server, the HVM
+# hosts and the Manager in one .tar.gz, secrets replaced (see roles/collect).
+# Changes nothing on the machines (temporary files only). Runs at the end of
+# every run with VME_STACK_DEBUG=1 (tools/vme_stack_run.py), or on its own:
+#   ansible-playbook collect.yml -i ../sites/<site>/site.yml --ask-vault-pass [--limit <host>]
+# Output: $VME_STACK_LOG_DIR (in the EE: /logs) or build/logs.
+- name: Support bundle - controller
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Controller
+      ansible.builtin.include_role:
+        name: collect
+        tasks_from: controller
+
+- name: Support bundle - deploy server
+  hosts: deploy_server
+  gather_facts: false
+  ignore_unreachable: true
+  tasks:
+    - name: Deploy server
+      ansible.builtin.include_role:
+        name: collect
+        tasks_from: deploy_server
+
+- name: Support bundle - HVM hosts
+  hosts: hvm
+  gather_facts: false
+  ignore_unreachable: true
+  tasks:
+    - name: HVM host
+      ansible.builtin.include_role:
+        name: collect
+        tasks_from: host
+
+- name: Support bundle - Manager (API)
+  hosts: vme_manager
+  gather_facts: false
+  ignore_unreachable: true
+  tasks:
+    - name: Manager
+      ansible.builtin.include_role:
+        name: collect
+        tasks_from: manager
+
+- name: Support bundle - redact and pack
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Pack
+      ansible.builtin.include_role:
+        name: collect
+        tasks_from: pack

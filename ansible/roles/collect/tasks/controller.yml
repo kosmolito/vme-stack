@@ -1,0 +1,81 @@
+---
+# Bundle directory and what the controller knows: versions, the site file, the
+# inventory as resolved (without secrets), rendered seeds, the run's log.
+- name: Name the bundle
+  ansible.builtin.set_fact:
+    bundle_dir: >-
+      {{ lookup('ansible.builtin.env', 'VME_STACK_LOG_DIR', default='') or (playbook_dir ~ '/build/logs') }}/vme-stack-support-{{
+      site.vme_site.site }}-{{ now(fmt='%Y%m%d-%H%M%S') }}
+  vars:
+    site: "{{ hostvars[groups['hvm'][0]] }}"
+
+- name: Create {{ bundle_dir }}
+  ansible.builtin.file:
+    path: "{{ bundle_dir }}/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: [controller, controller/seeds]
+
+- name: Versions
+  ansible.builtin.copy:
+    dest: "{{ bundle_dir }}/controller/versions.txt"
+    mode: "0600"
+    content: |
+      vme-stack: {{ lookup('ansible.builtin.env', 'VME_STACK_VERSION', default='')
+                    or lookup('ansible.builtin.file', playbook_dir ~ '/VERSION', errors='ignore')
+                    or lookup('ansible.builtin.file', playbook_dir ~ '/../ee/VERSION', errors='ignore') or 'unknown' }}
+      ansible-core: {{ ansible_version.full }}
+      python: {{ ansible_playbook_python }}
+      code: {{ playbook_dir }}
+      collected: {{ now(utc=true).isoformat() }} UTC
+      site: {{ hostvars[groups['hvm'][0]].vme_site_file }}
+
+- name: The site file
+  ansible.builtin.copy:
+    src: "{{ hostvars[groups['hvm'][0]].vme_site_file }}"
+    dest: "{{ bundle_dir }}/controller/site.yml"
+    mode: "0600"
+
+# Only what the plugin derived from the site file; secrets are not in this list.
+- name: The inventory as resolved
+  ansible.builtin.copy:
+    dest: "{{ bundle_dir }}/controller/inventory.yml"
+    mode: "0600"
+    content: |
+      {% for h in groups['all'] | difference(['localhost']) %}
+      {{ h }}:
+        groups: {{ groups | dict2items | selectattr('value', 'contains', h) | map(attribute='key') | reject('equalto', 'all') | list }}
+      {%   for k in inventory_keys if hostvars[h][k] is defined %}
+        {{ k }}: {{ hostvars[h][k] | to_json }}
+      {%   endfor %}
+      {% endfor %}
+  vars:
+    inventory_keys: [ansible_host, ansible_user, ansible_connection, ansible_ssh_private_key_file, platform, admin_user,
+                     ip, prefix, gateway, dns, ntp_servers, domain, mgmt_vlan, timezone, bond_mode, proxy, nics, netplan,
+                     mgmt_interface, compute_interface, boot_disk, storage, bmc, hvm_ssh_keys, media_url, seed_mode,
+                     hvm_src_iso, deploy_host, probe_from]
+
+- name: Find rendered seeds and ISO URLs
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/build"
+    patterns: [user-data, meta-data, iso_url]
+    recurse: true
+    depth: 2
+  register: seed_files
+  when: (playbook_dir ~ '/build') is directory
+
+- name: Copy rendered seeds and ISO URLs
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ bundle_dir }}/controller/seeds/{{ item.path | dirname | basename }}/{{ item.path | basename }}"
+    mode: "0600"
+  loop: "{{ seed_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | dirname | basename }}/{{ item.path | basename }}"
+
+- name: The run's log (VME_STACK_DEBUG)
+  ansible.builtin.copy:
+    src: "{{ lookup('ansible.builtin.env', 'VME_STACK_RUN_LOG') }}"
+    dest: "{{ bundle_dir }}/controller/{{ lookup('ansible.builtin.env', 'VME_STACK_RUN_LOG') | basename }}"
+    mode: "0600"
+  when: lookup('ansible.builtin.env', 'VME_STACK_RUN_LOG', default='') is file

@@ -21,6 +21,8 @@ ansible-playbook media.yml -i $SITE                      # build + publish ISOs,
 ansible-playbook deploy.yml -i $SITE --vault-password-file <site dir>/.vault_pass   # whole pipeline
 ansible-playbook hvm_hosts.yml -i $SITE                  # wait for SSH + post-install (also builds media if needed)
 # reinstall a host: hvm_hosts.yml -e force_reinstall=true --limit <host>
+ansible-playbook collect.yml -i $SITE    # support bundle (logs + state, secrets replaced) into build/logs
+# run log + bundle like the EE: python3 tools/vme_stack_run.py ansible-playbook ... (VME_STACK_DEBUG=1)
 ```
 
 Site data lives only in the site file (schema: `ansible/schemas/site.schema.json`); tuning defaults in `ansible/group_vars/all.yml`. The pipeline never touches a hypervisor: VMs are servers booted by someone else (`platform: manual`). Example sites: `ansible/examples/` (guided), `sites/example/` (every setting).

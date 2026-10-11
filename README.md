@@ -41,12 +41,19 @@ both works too).
 Check everything first (changes nothing), then deploy:
 
 ```bash
-docker run --rm -it -v $PWD/sites/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:latest \
+mkdir -p logs                 # run logs land here (writable for the container's uid 1000)
+docker run --rm -it -v $PWD/sites/acme:/site:ro -v $PWD/logs:/logs ghcr.io/kosmolito/vme-stack-ee:latest \
   ansible-playbook preflight.yml -i /site/site.yml --ask-vault-pass
 
-docker run --rm -it -v $PWD/sites/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:latest \
+docker run --rm -it -v $PWD/sites/acme:/site:ro -v $PWD/logs:/logs ghcr.io/kosmolito/vme-stack-ee:latest \
   ansible-playbook deploy.yml -i /site/site.yml --ask-vault-pass
 ```
+
+Every run writes its log to `logs/`. **Something went wrong?** Run it again with
+`-e VME_STACK_DEBUG=1` after `docker run`: more detail, and at the end (also after a
+failure) a support bundle `logs/vme-stack-support-<site>-<date>.tar.gz` with the
+logs and state of all machines, secrets replaced. Send that file. Details:
+[`ee/README.md`](ee/README.md#logs-and-support-bundle).
 
 Example sites with step-by-step guides, for VMs and for bare metal:
 [`ansible/examples/`](ansible/examples/README.md). Every setting, with comments:

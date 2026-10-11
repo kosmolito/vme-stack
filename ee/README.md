@@ -122,6 +122,52 @@ docker run --rm -it -v ~/vme-sites/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:
 No `--network host` on a Mac (it would be Docker's VM, not the Mac). Use
 `preflight.yml` first to check everything without changes.
 
+## Logs and support bundle
+
+Mount a writable directory as `/logs` (`-v $PWD/logs:/logs`; writable for uid 1000,
+e.g. `chmod a+rwx logs`). Every `ansible-playbook` run writes its whole output to
+`/logs/<date>-<time>-<playbook>.log` (Ansible's `ANSIBLE_LOG_PATH`). Without the
+mount the log stays in the container and is lost; the run says so.
+
+With `-e VME_STACK_DEBUG=1`:
+
+- the run is verbose (`-vvv`, also SSH details);
+- afterwards, also after a failure, `collect.yml` runs with the same inventory,
+  `--limit`, extra vars and vault options (`--ask-vault-pass` is asked once) and
+  writes `/logs/vme-stack-support-<site>-<date>.tar.gz`:
+  - controller: versions, the site file, the inventory as resolved, rendered seeds,
+    the run's log
+  - deploy server: OS, disk, mounts, nginx config and logs, published ISOs, SELinux,
+    firewall, journal warnings
+  - each HVM host: installer and cloud-init logs, netplan, addresses, routes, OVS,
+    time sync, disks, libvirt, failed units, journal warnings, the `hpe-vm --install`
+    log (Manager host)
+  - the Manager (API): version, license, health, its own logs and alarms, groups,
+    clouds, clusters, servers, instances, recent processes
+  - `COLLECTED.txt` (which machines answered) and `REDACTED.txt`
+- the exit code stays the run's.
+
+Collecting changes nothing on the machines (temporary files only). Machines that do
+not answer are listed in `COLLECTED.txt`; the rest is still collected.
+
+**Secrets**: before packing, every value of the site's vault and every secret field
+of the site file (literal ones too) is replaced by `********` in every collected
+file, and password hashes are masked; `REDACTED.txt` lists what was replaced where
+(counts only). Logs of other tools can contain secrets (e.g. HPE's `hpe-vm --install`
+log has the Manager password): they are caught the same way. Check the bundle before
+sending if in doubt; nothing is sent anywhere automatically.
+
+The bundle on its own, e.g. later for a running system:
+
+```bash
+docker run --rm -it -v ~/vme-sites/acme:/site:ro -v $PWD/logs:/logs ghcr.io/kosmolito/vme-stack-ee:0.1.2 \
+  ansible-playbook collect.yml -i /site/site.yml --ask-vault-pass
+```
+
+Without the container (Ansible installed): `python3 tools/vme_stack_run.py
+ansible-playbook ...` in `ansible/` does the same, logs in `build/logs` or
+`$VME_STACK_LOG_DIR`; `collect.yml` also runs directly.
+
 ## Hotfix (emergency code change)
 
 Mount a host directory at `/vme-stack-hotfix`:

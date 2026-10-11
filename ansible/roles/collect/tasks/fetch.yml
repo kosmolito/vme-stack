@@ -1,0 +1,20 @@
+---
+# collected.stdout ends with the path of the .tar.gz the script wrote.
+- name: Fetch the collection of {{ inventory_hostname }}
+  ansible.builtin.fetch:
+    src: "{{ tarball }}"
+    dest: "{{ hostvars['localhost'].bundle_dir }}/{{ inventory_hostname }}.tar.gz"
+    flat: true
+  become: true
+  changed_when: false     # a copy of our own temporary file: nothing changes on the machine
+  when: tarball.endswith('.tar.gz')
+  vars:
+    tarball: "{{ collected.stdout_lines | default([''], true) | last }}"
+
+- name: Remove the temporary collection
+  ansible.builtin.file:
+    path: "{{ collected.stdout_lines | last }}"
+    state: absent
+  become: true
+  changed_when: false
+  when: (collected.stdout_lines | default([''], true) | last).endswith('.tar.gz')

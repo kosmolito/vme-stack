@@ -9,6 +9,17 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **Run logs**: every `ansible-playbook` run in the container writes its whole
+  output to `/logs/<date>-<time>-<playbook>.log` when a writable `/logs` is
+  mounted (`-v $PWD/logs:/logs`); without it the run says the log is lost.
+- **Support bundle**: `-e VME_STACK_DEBUG=1` makes a run verbose and afterwards,
+  also after a failure, collects logs and state of the controller, the deploy
+  server, every HVM host and the Manager (API) into
+  `/logs/vme-stack-support-<site>-<date>.tar.gz`, with every vault value, every
+  secret field of the site file and password hashes replaced by `********`.
+  `collect.yml` does the same on its own. Collecting changes nothing on the
+  machines. See `ee/README.md` (Logs and support bundle).
+
 ## [0.1.2] - 2026-10-11
 
 - **Site file change: SSH keys per login.** `access` is gone. The deploy server's
