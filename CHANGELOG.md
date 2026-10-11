@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-11
+
 - **Site file change: secrets are plain Ansible values.** A secret field holds the
   value itself, the Ansible way: usually a quoted template referencing the vault,
   e.g. `hvm_admin_password: "{{ vault_hvm_admin_password }}"` (recommended), or a
