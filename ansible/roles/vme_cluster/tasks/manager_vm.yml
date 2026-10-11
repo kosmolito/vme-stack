@@ -6,28 +6,28 @@
 # server" (PUT /api/servers/<id>/resize) can move a volume to another datastore;
 # the local copy is kept (deleteOriginalVolumes: false).
 
-- name: Move the Manager VM's disk to {{ vme_manager.datastore | default('-') }}
-  when: vme_manager.datastore | default('', true) | length > 0
+- name: Move the Manager VM's disk to {{ manager.datastore | default('-') }}
+  when: manager.datastore | default('', true) | length > 0
   block:
     - name: Find the Manager VM in the Manager
       ansible.builtin.uri:
-        url: "{{ vme_api }}/servers?name={{ vme_manager.hostname | urlencode }}"
+        url: "{{ vme_api }}/servers?name={{ manager.hostname | urlencode }}"
         validate_certs: false
         headers: "{{ vme_headers }}"
       delegate_to: "{{ probe_from }}"
       register: mgr_find
-      failed_when: mgr_find.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | list | length != 1
+      failed_when: mgr_find.json.servers | selectattr('name', 'equalto', manager.hostname) | list | length != 1
 
     - name: Read the Manager VM and the target datastore
       ansible.builtin.set_fact:
-        mgr_server: "{{ mgr_find.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | first }}"
-        mgr_target_ds: "{{ vme_manager_cluster_ds | selectattr('name', 'equalto', vme_manager.datastore) | first }}"
+        mgr_server: "{{ mgr_find.json.servers | selectattr('name', 'equalto', manager.hostname) | first }}"
+        mgr_target_ds: "{{ vme_manager_cluster_ds | selectattr('name', 'equalto', manager.datastore) | first }}"
 
     - name: Set the root volume
       ansible.builtin.set_fact:
         mgr_root: "{{ mgr_server.volumes | selectattr('rootVolume') | first }}"
 
-    - name: "Reconfigure the Manager VM, root volume to: {{ vme_manager.datastore }}"
+    - name: "Reconfigure the Manager VM, root volume to: {{ manager.datastore }}"
       ansible.builtin.uri:
         url: "{{ vme_api }}/servers/{{ mgr_server.id }}/resize"
         method: PUT
@@ -54,7 +54,7 @@
       when: (mgr_root.datastore.id | default(0)) != mgr_target_ds.id
       changed_when: true
 
-    - name: Wait for the Manager's disk to be on {{ vme_manager.datastore }}
+    - name: Wait for the Manager's disk to be on {{ manager.datastore }}
       ansible.builtin.uri:
         url: "{{ vme_api }}/servers/{{ mgr_server.id }}"
         validate_certs: false
@@ -71,7 +71,7 @@
 
     - name: Wait for the Manager to answer again
       ansible.builtin.uri:
-        url: "https://{{ vme_manager.ip }}/ping"
+        url: "https://{{ manager.ip }}/ping"
         validate_certs: false
         timeout: 10
       delegate_to: "{{ probe_from }}"
@@ -86,8 +86,8 @@
         that: >-
           mgr_resize is skipped or
           ((mgr_after.json.server.volumes | selectattr('rootVolume') | first).datastore.id | default(0)) == mgr_target_ds.id
-        fail_msg: "The Manager's root volume is not on {{ vme_manager.datastore }}; check the server's history in the Manager"
-        success_msg: "The Manager's root volume is on {{ vme_manager.datastore }}"
+        fail_msg: "The Manager's root volume is not on {{ manager.datastore }}; check the server's history in the Manager"
+        success_msg: "The Manager's root volume is on {{ manager.datastore }}"
 
 # --- the Manager VM as a managed VM ---------------------------------------------
 # hpe-vm's VM is only "discovered" (kvmUnmanaged). Convert to managed, as the
@@ -96,12 +96,12 @@
 
 - name: Read the Manager VM's record
   ansible.builtin.uri:
-    url: "{{ vme_api }}/servers?name={{ vme_manager.hostname | urlencode }}"
+    url: "{{ vme_api }}/servers?name={{ manager.hostname | urlencode }}"
     validate_certs: false
     headers: "{{ vme_headers }}"
   delegate_to: "{{ probe_from }}"
   register: mgr_rec
-  failed_when: mgr_rec.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | list | length != 1
+  failed_when: mgr_rec.json.servers | selectattr('name', 'equalto', manager.hostname) | list | length != 1
 
 - name: Convert the Manager VM to managed
   ansible.builtin.uri:
@@ -112,13 +112,13 @@
     body_format: json
     body:
       server:
-        sshUsername: "{{ vme_manager.admin_user }}"
+        sshUsername: "{{ manager.admin_user }}"
         sshPassword: "{{ vme_manager.admin_password }}"
         provisionSiteId: "{{ vme_group_ids[vme_manager_group] | int }}"
       installAgent: false
     timeout: 120
   vars:
-    mgr_vm: "{{ mgr_rec.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | first }}"
+    mgr_vm: "{{ mgr_rec.json.servers | selectattr('name', 'equalto', manager.hostname) | first }}"
   delegate_to: "{{ probe_from }}"
   register: mgr_managed
   when: mgr_vm.computeServerType.code is search('[Uu]nmanaged')

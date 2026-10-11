@@ -23,8 +23,8 @@ sites/acme/                       # anywhere; sites/ is gitignored in this repos
   build/                          # rendered seeds and ISO URLs
 ```
 
-Keys live here, written relative to the site file (`keys/deploy_server`): the
-container only sees this directory (as `/site`).
+Keys live here; the inventory points to them with `"{{ inventory_dir }}/keys/..."`:
+the container only sees this directory (as `/site`).
 
 ```bash
 cp -r sites/example sites/acme && cd sites/acme
@@ -66,5 +66,5 @@ In the Manager: groups `production` and `development`; the HVM cloud
 holds the Manager VM) and cluster `dev` (hvm04, which has other interface names:
 hosts of one cluster must share them).
 
-`task test` checks this file against the schema and the site rules, like every
+`task test` checks this file with `validate.yml` (variables and site rules), like every
 `sites/*/site.yml`.

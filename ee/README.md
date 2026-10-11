@@ -95,10 +95,10 @@ docker run --rm -it -v $PWD:/site:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-s
 ```
 
 - Paths in the site file are relative to it, so keys belong in the site directory
-  (`keys/...`): the container sees nothing else.
+  (`ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/..."`): the container sees nothing else.
 - The pipeline only makes outgoing connections (SSH, HTTPS, Redfish); no
   `--network host` needed, also not on a Mac or over VPN.
-- On the deploy server itself, keep `deploy_server.connection: ssh` with its own
+- On the deploy server itself, keep the default SSH connection to its own
   address: `local` would mean inside the container.
 - The image is multi-arch (linux/amd64, linux/arm64): an Apple Silicon Mac gets the
   native arm64 variant.
@@ -117,7 +117,7 @@ What has to be in place:
 2. **A site directory**, see the [README](../README.md#quick-start) (copy
    [`sites/example/`](../sites/example/README.md)).
 3. **Network from the client** (outgoing only): SSH (22) to the deploy server and to
-   the HVM hosts (directly or via `deploy_server.jump`), HTTPS (443) to the BMCs for
+   the HVM hosts (directly or via `ssh_jump`), HTTPS (443) to the BMCs for
    `platform: redfish`. The client does not need to reach the Manager or the media
    URLs: Manager API calls run from the deploy server, hosts/BMCs fetch the ISOs
    from it.

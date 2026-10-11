@@ -1,7 +1,7 @@
 ---
 - name: Collect on {{ inventory_hostname }}
   ansible.builtin.script:
-    cmd: "collect_deploy_server.sh {{ vme_site.deploy_server.www_root | default('/srv/vme-stack/www') | quote }}"
+    cmd: "collect_deploy_server.sh {{ media_www_root | quote }}"
   become: true
   register: collected
   changed_when: false

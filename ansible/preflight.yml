@@ -1,6 +1,22 @@
 ---
 # Stage 1 on its own: validate the site file and the environment; changes nothing.
 #   ansible-playbook preflight.yml -i ../sites/<site>/site.yml
+- name: Site inventory shape
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: The inventory is a vme-stack site (groups hvm and deploy_server)
+      ansible.builtin.assert:
+        that:
+          - groups['hvm'] | default([]) | length > 0
+          - groups['deploy_server'] | default([]) | length > 0
+          - site is defined and network is defined and media is defined
+        fail_msg: >-
+          {{ inventory_file | default(ansible_inventory_sources | join(', ')) }} is not a vme-stack site inventory:
+          it needs hosts in groups hvm and deploy_server and site, network, media in all.vars
+          (a site file from before 0.1.4 has the old format; see sites/example/site.yml)
+        quiet: true
+
 - name: Preflight
   hosts: hvm
   gather_facts: false

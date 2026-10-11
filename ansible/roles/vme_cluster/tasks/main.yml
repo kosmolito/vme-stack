@@ -7,8 +7,8 @@
 # API calls go from probe_from (the deploy server reaches the Manager).
 - name: Set API facts
   ansible.builtin.set_fact:
-    vme_api: "https://{{ vme_manager.ip }}/api"
-    vme_cluster_hosts: "{{ vme_clusters | map(attribute='hosts') | flatten }}"
+    vme_api: "https://{{ manager.ip }}/api"
+    vme_cluster_hosts: "{{ manager_clusters | map(attribute='hosts') | flatten }}"
 
 - name: Let the Manager's key into the cluster hosts' admin user
   ansible.builtin.lineinfile:
@@ -21,12 +21,12 @@
 
 - name: Log in to the Manager
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
+    url: "https://{{ manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
     method: POST
     validate_certs: false
     body_format: form-urlencoded
     body:
-      username: "{{ vme_manager.admin_user }}"
+      username: "{{ manager.admin_user }}"
       password: "{{ vme_manager.admin_password }}"
   delegate_to: "{{ probe_from }}"
   register: vme_login
@@ -57,7 +57,7 @@
     body_format: json
     body: {group: {name: "{{ item }}"}}
   delegate_to: "{{ probe_from }}"
-  loop: "{{ vme_groups | difference(grp_list.json.groups | map(attribute='name')) }}"
+  loop: "{{ manager_groups | difference(grp_list.json.groups | map(attribute='name')) }}"
   register: grp_new
   changed_when: true
 
@@ -102,7 +102,7 @@
     vc_cred: "{{ vme_vcenter_logins[item.name] if item.type == 'vmware' else {} }}"
     vc_url: "{{ item.vcenter.url | default('') | regex_replace('/+$', '') }}"
   delegate_to: "{{ probe_from }}"
-  loop: "{{ vme_clouds | rejectattr('name', 'in', zone_list.json.zones | map(attribute='name')) }}"
+  loop: "{{ manager_clouds | rejectattr('name', 'in', zone_list.json.zones | map(attribute='name')) }}"
   loop_control:
     label: "{{ item.name }} ({{ item.type }})"
   register: zone_new
@@ -131,7 +131,7 @@
 # Created with the import off; vcenter_import.yml switches it on once the cloud is up.
 - name: Import the existing VMs of vCenter clouds
   ansible.builtin.include_tasks: vcenter_import.yml
-  loop: "{{ vme_clouds | selectattr('type', 'equalto', 'vmware') | selectattr('vcenter.import_existing') }}"
+  loop: "{{ manager_clouds | selectattr('type', 'equalto', 'vmware') | selectattr('vcenter.import_existing') }}"
   loop_control:
     loop_var: vc
     label: "{{ vc.name }}"
@@ -161,9 +161,9 @@
           {{ out }}
   vars:
     grp: "{{ grp_zones.json.groups | selectattr('name', 'equalto', item) | first }}"
-    wanted: "{{ vme_clouds | selectattr('groups', 'contains', item) | map(attribute='name') | map('extract', vme_cloud_ids) | list }}"
+    wanted: "{{ manager_clouds | selectattr('groups', 'contains', item) | map(attribute='name') | map('extract', vme_cloud_ids) | list }}"
   delegate_to: "{{ probe_from }}"
-  loop: "{{ vme_groups }}"
+  loop: "{{ manager_groups }}"
   when: wanted | difference(grp.zones | map(attribute='id')) | length > 0
   changed_when: true
 
@@ -194,7 +194,7 @@
     body_format: json
     body:
       keyPair:
-        name: "{{ vme_manager.hostname }}-ssh"
+        name: "{{ manager.hostname }}-ssh"
         publicKey: "{{ vme_manager.ssh_public_key }}"
         privateKey: "{{ vme_manager.ssh_private_key }}"
   delegate_to: "{{ probe_from }}"
@@ -229,11 +229,11 @@
 
 - name: HVM clusters
   ansible.builtin.include_tasks: cluster.yml
-  loop: "{{ vme_clusters }}"
+  loop: "{{ manager_clusters }}"
   loop_control:
     loop_var: cl
     label: "{{ cl.name }}"
 
 - name: The Manager VM
   ansible.builtin.include_tasks: manager_vm.yml
-  when: vme_manager.host in vme_cluster_hosts
+  when: manager.host in vme_cluster_hosts

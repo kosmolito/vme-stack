@@ -9,9 +9,9 @@
   ansible.builtin.set_fact:
     hpe_vm_log: /var/log/vme-stack-hpe-vm-install.log
 
-- name: Check whether the Manager answers on {{ vme_manager.ip }}
+- name: Check whether the Manager answers on {{ manager.ip }}
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/ping"
+    url: "https://{{ manager.ip }}/ping"
     validate_certs: false
     timeout: 10
   delegate_to: "{{ probe_from }}"
@@ -25,7 +25,7 @@
       ansible.builtin.shell: |
         set -o pipefail
         awk '/^MemTotal/ {print int($2/1024/1024)}' /proc/meminfo
-        virsh list --all --name | grep -Fx {{ vme_manager.hostname | quote }} || true
+        virsh list --all --name | grep -Fx {{ manager.hostname | quote }} || true
       args:
         executable: /bin/bash
       become: true
@@ -33,22 +33,22 @@
       changed_when: false
 
     # hpe-vm sizes: S = 12 GB, M = 16 GB, L = 32 GB for the Manager; keep >= 4 GB for the host.
-    - name: "Check the host has room for the Manager size: {{ vme_manager.size }}"
+    - name: "Check the host has room for the Manager size: {{ manager.size }}"
       ansible.builtin.assert:
         that: host_state_mgr.stdout_lines[0] | int >= need_gb
         fail_msg: >-
-          {{ inventory_hostname }} has {{ host_state_mgr.stdout_lines[0] }} GB RAM; a size {{ vme_manager.size }}
-          Manager needs {{ need_gb }} GB here ({{ {'S': 12, 'M': 16, 'L': 32}[vme_manager.size] }} GB + 4 GB for the host)
+          {{ inventory_hostname }} has {{ host_state_mgr.stdout_lines[0] }} GB RAM; a size {{ manager.size }}
+          Manager needs {{ need_gb }} GB here ({{ {'S': 12, 'M': 16, 'L': 32}[manager.size] }} GB + 4 GB for the host)
         quiet: true
       vars:
-        need_gb: "{{ {'S': 12, 'M': 16, 'L': 32}[vme_manager.size] + 4 }}"
+        need_gb: "{{ {'S': 12, 'M': 16, 'L': 32}[manager.size] + 4 }}"
 
     - name: Refuse to install over an existing Manager VM that does not answer
       ansible.builtin.assert:
         that: host_state_mgr.stdout_lines | length == 1
         fail_msg: >-
-          A VM named {{ vme_manager.hostname }} already exists on {{ inventory_hostname }} but
-          https://{{ vme_manager.ip }}/ping does not answer. Check it (virsh list --all) instead of reinstalling.
+          A VM named {{ manager.hostname }} already exists on {{ inventory_hostname }} but
+          https://{{ manager.ip }}/ping does not answer. Check it (virsh list --all) instead of reinstalling.
         quiet: true
 
     # The output may contain the password: keep the files root-only
@@ -83,25 +83,25 @@
           - /usr/bin/hpe-vm
           - --install
           - --address
-          - "{{ vme_manager.ip }}"
+          - "{{ manager.ip }}"
           - --netmask
-          - "{{ vme_manager.netmask }}"
+          - "{{ manager.netmask }}"
           - --gateway
-          - "{{ vme_manager.gateway }}"
+          - "{{ manager.gateway }}"
           - --dns
-          - "{{ vme_manager.dns | join(',') }}"
+          - "{{ manager.dns | join(',') }}"
           - --hostname
-          - "{{ vme_manager.hostname }}"
+          - "{{ manager.hostname }}"
           - --url
-          - "{{ vme_manager.url }}"
+          - "{{ manager.url }}"
           - --user
-          - "{{ vme_manager.admin_user }}"
+          - "{{ manager.admin_user }}"
           - --pass
           - "{{ vme_manager.admin_password }}"
           - --qcow
           - "{{ vme_image_url }}"
           - --size
-          - "{{ vme_manager.size }}"
+          - "{{ manager.size }}"
           - --iface
           - "{{ mgmt_interface }}"
       become: true
@@ -146,9 +146,9 @@
         quiet: true
 
 # First boot of the appliance configures Morpheus; this takes a while.
-- name: "Wait for the Manager to answer /ping: {{ vme_manager.ip }}"
+- name: "Wait for the Manager to answer /ping: {{ manager.ip }}"
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/ping"
+    url: "https://{{ manager.ip }}/ping"
     validate_certs: false
     timeout: 10
   delegate_to: "{{ probe_from }}"

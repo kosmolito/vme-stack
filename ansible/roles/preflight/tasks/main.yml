@@ -1,6 +1,7 @@
 ---
 # Stage 1: preflight. Nothing here changes any machine.
-# 1. Site rules over the whole site file (even with --limit), all listed at once.
+# 1. The site inventory (site.yml): secrets, variables, rules over the whole site
+#    (even with --limit), every problem of a step listed at once.
 # 2. Environment checks for the targeted hosts, all collected, then one verdict per host.
 
 # deploy.yml imports several stage playbooks that each import preflight: run it once.
@@ -8,19 +9,14 @@
   ansible.builtin.meta: end_play
   when: vme_preflight_passed | default(false) | bool
 
-- name: "Check the site rules: {{ vme_site_file }}"
-  run_once: true
-  ansible.builtin.assert:
-    that: site_problems | length == 0
-    fail_msg: "{{ ['site file has ' ~ site_problems | length ~ ' problem(s):'] + site_problems }}"
-    quiet: true
-  vars:
-    site_problems: "{{ vme_site | vme_site_errors(role_path ~ '/..') }}"
+# --- The site inventory (no machine is contacted; also validate.yml) ----------
+- name: Check the site inventory
+  ansible.builtin.import_tasks: site.yml
 
 # --- Controller -------------------------------------------------------------
 
 # Private key files on the controller: the deploy server's login and the HVM
-# hosts' (hvm_ssh_private_key; may be the same file).
+# hosts' (ansible_ssh_private_key_file of each; may be the same file).
 - name: Check the SSH private keys on the controller
   run_once: true
   delegate_to: localhost
@@ -33,7 +29,7 @@
       {{ (([hostvars[deploy_host].ansible_ssh_private_key_file] if hostvars[deploy_host].ansible_ssh_private_key_file | default(none) else [])
           + ansible_play_hosts_all | map('extract', hostvars, 'ansible_ssh_private_key_file') | list) | unique }}
 
-# The HVM hosts get the public key of hvm_ssh_private_key (plus hvm_ssh_keys), so
+# The HVM hosts get the public key of their ansible_ssh_private_key_file (plus hvm_ssh_keys), so
 # the key the controller logs in with is always installed. A key with a
 # passphrase: ssh-keygen cannot read it unattended, then <key>.pub is used.
 - name: Read the public keys of the HVM hosts' private keys
@@ -71,7 +67,7 @@
     ssh_keys: >-
       {{ (hvm_pubkeys.results | selectattr('item', 'equalto', ansible_ssh_private_key_file)
           | selectattr('rc', 'equalto', 0) | map(attribute='stdout') | map('trim') | list
-          + hvm_ssh_keys) | unique }}
+          + hvm_ssh_keys | default([])) | unique }}
 
 # --- Deploy server (builds and serves the ISOs) -----------------------------
 
@@ -92,8 +88,8 @@
     else
       echo "stock HVM ISO not found: {{ hvm_src_iso }}"
     fi
-    {% if vme_manager is defined and vme_manager.vme_iso %}
-    [ -r {{ vme_manager.vme_iso | quote }} ] || echo "VME software ISO not found: {{ vme_manager.vme_iso }}"
+    {% if manager.vme_iso | default('') %}
+    [ -r {{ manager.vme_iso | quote }} ] || echo "VME software ISO not found: {{ manager.vme_iso }}"
     {% endif %}
     true
   args:
@@ -106,7 +102,7 @@
   delegate_to: "{{ deploy_host }}"
   ansible.builtin.copy:
     content: "{{ raw_netplan | to_json }}"
-    dest: "/tmp/vme-stack-netplan-{{ vme_site.site }}.json"
+    dest: "/tmp/vme-stack-netplan-{{ site }}.json"
     mode: "0600"
   vars:
     raw_netplan: >-
@@ -123,7 +119,7 @@
   run_once: true
   delegate_to: "{{ deploy_host }}"
   ansible.builtin.script:
-    cmd: "netplan_check.py /tmp/vme-stack-netplan-{{ vme_site.site }}.json"
+    cmd: "netplan_check.py /tmp/vme-stack-netplan-{{ site }}.json"
     executable: python3
   register: netplan_check
   changed_when: false
@@ -149,32 +145,6 @@
       {{ (netplan_check.stdout_lines | select('match', '[{]') | last | from_json).get('_unavailable')
          if netplan_check is defined and netplan_check is not skipped else none }}
 
-# --- Secrets ------------------------------------------------------------------
-# Every vault reference in the site file ("{{ vault_x }}") must resolve: vault
-# file loaded, variable defined, not empty. Only the references are shown.
-- name: Check the site's secrets resolve (Manager, vCenters)
-  run_once: true
-  ansible.builtin.set_fact:
-    site_secret_problems: "{{ unresolved }}"
-  vars:
-    values: "{{ site_secrets }}"
-    refs: "{{ site_secret_refs }}"
-    unresolved: &unresolved >-
-      {%- set out = [] -%}
-      {%- for field, ref in refs.items() if values[field] | default('', true) | string | length == 0 -%}
-      {{- out.append(field ~ ': ' ~ ref ~ ' is not defined or empty (vault file group_vars/all/vault.yml'
-                     ~ ' next to the site file; --ask-vault-pass or --vault-password-file)') -}}
-      {%- endfor -%}
-      {{ out }}
-
-- name: Check this host's secrets resolve (admin password, BMC login)
-  ansible.builtin.set_fact:
-    secret_problems: "{{ unresolved }}"
-  vars:
-    values: "{{ secrets }}"
-    refs: "{{ secret_refs }}"
-    unresolved: *unresolved
-
 # --- DNS and NTP, probed from where the hosts live ---------------------------
 
 # Names the hosts must resolve with the site's DNS servers (they use exactly
@@ -186,8 +156,8 @@
   run_once: true
   ansible.builtin.set_fact:
     manager_dns_name: >-
-      {{ vme_manager.url | urlsplit('hostname')
-         if vme_manager is defined and vme_manager.url | urlsplit('hostname') is not match('^[0-9.]+$') else '' }}
+      {{ manager.url | urlsplit('hostname')
+         if manager.url is defined and manager.url | urlsplit('hostname') is not match('^[0-9.]+$') else '' }}
     ntp_dns_names: "{{ ntp_servers | reject('match', '^[0-9.]+$') | list }}"
 
 - name: Probe DNS and NTP from {{ probe_from }}
@@ -220,9 +190,9 @@
     # Servers that do not answer at all are reported (warning) above.
     manager_dns_problems: >-
       {%- set out = [] -%}
-      {%- for server, r in probe.resolve[manager_dns_name] | default({}) | dictsort if r.ok and vme_manager.ip not in r.ips -%}
+      {%- for server, r in probe.resolve[manager_dns_name] | default({}) | dictsort if r.ok and manager.ip not in r.ips -%}
       {{ out.append('DNS server ' ~ server ~ ' resolves the Manager URL name ' ~ manager_dns_name ~ ' to '
-                    ~ (r.ips | join(', ') if r.ips else 'nothing') ~ ', expected ' ~ vme_manager.ip) }}
+                    ~ (r.ips | join(', ') if r.ips else 'nothing') ~ ', expected ' ~ manager.ip) }}
       {%- endfor -%}
       {{ out }}
     ntp_dns_warnings: >-
@@ -266,7 +236,6 @@
       {{ controller_problems + net_problems +
          (deploy_check.stdout_lines | map('regex_replace', '^', deploy_host ~ ': ') | list) +
          ([('netplan: ' ~ netplan_result)] if netplan_result else []) +
-         site_secret_problems + secret_problems +
          (['BMC ' ~ bmc.address ~ ': Redfish service not reachable from the controller ('
            ~ (bmc_root.msg | default(bmc_root.status | default('?'))) ~ ')']
            if platform == 'redfish' and (bmc_root.status | default(0)) != 200 else []) }}

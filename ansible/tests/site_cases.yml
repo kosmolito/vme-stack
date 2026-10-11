@@ -1,306 +1,303 @@
-# Site rule tests for tests/check_sites.py: the base site must pass, each case
+# Site inventory tests for tests/check_sites.py: the base site must pass, each case
 # (base + patch; dicts merge, lists and values replace, null deletes) must fail
-# with a message containing `expect`.
+# with a message containing `expect`. Each runs validate.yml (what preflight checks
+# first), with a dummy value for every "{{ vault_... }}".
 base:
-  site: test
-  version: 1
-  media:
-    hvm_iso: /srv/vme-stack/src/HVM.iso
-    vme_iso: /srv/vme-stack/src/VME.iso
-  network:
-    domain: example.com
-    gateway: 10.0.0.1
-    prefix: 24
-    mgmt_vlan: 100
-    dns: [10.0.0.10]
-    ntp: [ntp.example.com]
-    compute_vlans: [200]
-  deploy_server:
-    address: 10.0.0.5
-    user: deploy
-    ssh_private_key: keys/vme-stack
-  vme_manager:
-    host: hvm01
-    ip: 10.0.0.30
-    hostname: vme-manager
-    admin_password: "{{ vault_vme_admin }}"
-    datastore: nfs01
-    ssh_private_key: "{{ vault_mgr_key }}"
-    ssh_public_key: "{{ vault_mgr_pub }}"
-  vme_groups: [{name: sto}, {name: gbg}]
-  vme_clouds:
-    - {name: sto-hvm, type: hvm, groups: [sto, gbg]}
-    - name: sto-vc
-      type: vmware
-      groups: [sto]
-      vcenter: {url: "https://vc.example.com/sdk", username: "{{ vault_vc.username }}", password: "{{ vault_vc.password }}", datacenter: DC1}
-  vme_clusters:
-    - name: sto-hvm01
-      cloud: sto-hvm
-      hosts: [hvm01, hvm02]
-      datastores:
-        - {name: nfs01, type: nfs, host: 10.0.0.6, path: /export/vme, default: true}
-    - {name: gbg-hvm01, cloud: sto-hvm, group: gbg, hosts: [hvm03]}
-  defaults:
-    platform: manual
-    hvm_admin_password: "{{ vault_hvm_admin }}"
-    hvm_ssh_private_key: keys/vme-stack
-  hosts:
-    - name: hvm01
-      ip: 10.0.0.21
-      nics: {mgmt: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"], compute: ["aa:bb:cc:00:00:03", "aa:bb:cc:00:00:04"]}
-    - name: hvm02
-      ip: 10.0.0.22
-      nics: {mgmt: ["aa:bb:cc:00:01:01", "aa:bb:cc:00:01:02"], compute: ["aa:bb:cc:00:01:03", "aa:bb:cc:00:01:04"]}
-    - name: hvm03
-      ip: 10.0.0.23
-      nics: {mgmt: ["aa:bb:cc:00:02:01"], compute: ["aa:bb:cc:00:02:03"]}
-
-cases:
-  # --- schema (inventory plugin) ---
-  - name: malformed MAC
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.0.21, nics: {mgmt: ["aa:bb:cc:00:00"], layout: shared}}
-    expect: MAC address like
-  - name: unknown key
-    patch: {network: {mtu: 9000}}
-    expect: Additional properties are not allowed
-  - name: nics and netplan together
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          nics: {mgmt: ["aa:bb:cc:00:00:01"], layout: shared}
-          netplan: {version: 2}
-          hpe_vm: {mgmt_interface: bond0}
-    expect: give either nics, or netplan + hpe_vm
-  - name: duplicate host name
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.0.21, nics: {mgmt: ["aa:bb:cc:00:00:01"], layout: shared}}
-        - {name: hvm01, ip: 10.0.0.22, nics: {mgmt: ["aa:bb:cc:00:01:01"], layout: shared}}
-    expect: names used more than once
-  # --- site rules (filter plugin / preflight) ---
-  - name: duplicate IP
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.0.21, nics: {mgmt: ["aa:bb:cc:00:00:01"], layout: shared}}
-        - {name: hvm02, ip: 10.0.0.21, nics: {mgmt: ["aa:bb:cc:00:01:01"], layout: shared}}
-    expect: IP 10.0.0.21 is used by more than one host
-  - name: duplicate MAC
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.0.21, nics: {mgmt: ["aa:bb:cc:00:00:01"], layout: shared}}
-        - {name: hvm02, ip: 10.0.0.22, nics: {mgmt: ["AA:BB:CC:00:00:01"], layout: shared}}
-    expect: MAC aa:bb:cc:00:00:01 is listed more than once
-  - name: IP outside the subnet
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.1.21, nics: {mgmt: ["aa:bb:cc:00:00:01"], layout: shared}}
-    expect: is not a usable address in 10.0.0.0/24
-  - name: host IP is the deploy server
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.0.5, nics: {mgmt: ["aa:bb:cc:00:00:01"], layout: shared}}
-    expect: is the deploy server
-  - name: dedicated layout without compute NICs
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.0.21, nics: {mgmt: ["aa:bb:cc:00:00:01"]}}
-    expect: needs nics.compute MACs
-  - name: shared layout with compute NICs
-    patch:
-      hosts:
-        - {name: hvm01, ip: 10.0.0.21, nics: {layout: shared, mgmt: ["aa:bb:cc:00:00:01"], compute: ["aa:bb:cc:00:00:03"]}}
-    expect: takes mgmt MACs only
-  - name: redfish without bmc
-    patch: {defaults: {platform: redfish}}
-    expect: needs a bmc block
-  - name: manual with bmc
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          bmc: {address: 10.0.1.21, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}"}
-          nics: {mgmt: ["aa:bb:cc:00:00:01"], compute: ["aa:bb:cc:00:00:03"]}
-    expect: does not use a bmc block
-  - name: seed_mode http not implemented
-    patch: {media: {seed_mode: http}}
-    expect: is not implemented yet
-  - name: boot_disk and storage together
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          boot_disk: {serial: "*S5Q83*"}
-          storage: {layout: {name: lvm}}
-          nics: {mgmt: ["aa:bb:cc:00:00:01"], compute: ["aa:bb:cc:00:00:03"]}
-    expect: give either boot_disk or storage
-  - name: netplan mgmt interface not defined
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          netplan: {version: 2, ethernets: {eno1: {addresses: ["10.0.0.21/24"]}}}
-          hpe_vm: {mgmt_interface: bond0}
-    expect: "hpe_vm.mgmt_interface 'bond0' is not defined in netplan"
-  - name: netplan IP not on the mgmt interface
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          netplan: {version: 2, ethernets: {eno1: {addresses: ["10.0.0.99/24"]}}}
-          hpe_vm: {mgmt_interface: eno1}
-    expect: ip 10.0.0.21 is not among the addresses of 'eno1'
-  - name: netplan mgmt interface with DHCP
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          netplan: {version: 2, ethernets: {eno1: {dhcp4: true, addresses: ["10.0.0.21/24"]}}}
-          hpe_vm: {mgmt_interface: eno1}
-    expect: uses DHCP
-  - name: compute interface is the parent of the mgmt VLAN
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          netplan:
-            version: 2
-            ethernets: {eno1: {}}
-            bonds: {bond0: {interfaces: [eno1]}}
-            vlans: {bond0.100: {id: 100, link: bond0, addresses: ["10.0.0.21/24"]}}
-          hpe_vm: {mgmt_interface: bond0.100, compute_interface: bond0}
-    expect: is the parent of mgmt VLAN
-  - name: Manager IP already used by a host
-    patch: {vme_manager: {ip: 10.0.0.22}}
-    expect: vme_manager.ip 10.0.0.22 is already used
-  - name: Manager host not in hosts
-    patch: {vme_manager: {host: hvm09}}
-    expect: "vme_manager.host 'hvm09' is not one of the hosts"
-  - name: Manager without the VME ISO
-    patch: {media: {vme_iso: null}}
-    expect: vme_manager needs media.vme_iso
-  - name: Manager datastore not a cluster datastore
-    patch: {vme_manager: {datastore: nfs99}}
-    expect: "vme_manager.datastore 'nfs99' is not one of cluster 'sto-hvm01' datastores"
-  - name: cluster hosts with different interface names
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          nics: {mgmt: ["aa:bb:cc:00:00:01"], compute: ["aa:bb:cc:00:00:03"]}
-        - name: hvm02
-          ip: 10.0.0.22
-          netplan: {version: 2, ethernets: {eno1: {addresses: ["10.0.0.22/24"]}}}
-          hpe_vm: {mgmt_interface: eno1}
-    expect: all hosts need the same mgmt/compute interface names
-  - name: cluster without hvm_admin_password
-    patch: {defaults: {hvm_admin_password: null}}
-    expect: the hosts need hvm_admin_password
-  - name: cluster hosts with different hvm_admin_password references
-    patch:
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          nics: {mgmt: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"], compute: ["aa:bb:cc:00:00:03", "aa:bb:cc:00:00:04"]}
-        - name: hvm02
-          ip: 10.0.0.22
-          hvm_admin_password: "{{ vault_hvm02_admin }}"
-          nics: {mgmt: ["aa:bb:cc:00:01:01", "aa:bb:cc:00:01:02"], compute: ["aa:bb:cc:00:01:03", "aa:bb:cc:00:01:04"]}
-        - name: hvm03
-          ip: 10.0.0.23
-          nics: {mgmt: ["aa:bb:cc:00:02:01"], compute: ["aa:bb:cc:00:02:03"]}
-    expect: "all hosts need the same hvm_admin_password (the Manager uses one SSH login): hvm01={{ vault_hvm_admin }}, hvm02={{ vault_hvm02_admin }}"
-  - name: cluster without compute_vlans
-    patch: {network: {compute_vlans: null}}
-    expect: network.compute_vlans is required
-  - name: two default datastores
-    patch:
-      vme_manager: {datastore: null}
+  all:
+    vars:
+      site: test
+      media: {hvm_iso: /srv/vme-stack/src/HVM.iso, vme_iso: /srv/vme-stack/src/VME.iso}
+      network:
+        domain: example.com
+        gateway: 10.0.0.1
+        prefix: 24
+        mgmt_vlan: 100
+        dns: [10.0.0.10]
+        ntp: [ntp.example.com]
+        compute_vlans: [200]
+      vme_manager:
+        ip: 10.0.0.30
+        hostname: vme-manager
+        admin_password: "{{ vault_vme_admin }}"
+        datastore: nfs01
+        ssh_private_key: "{{ vault_mgr_private_key }}"
+        ssh_public_key: "{{ vault_mgr_public_key }}"
+      vme_groups: [{name: sto}, {name: gbg}]
+      vme_clouds:
+        - {name: sto-hvm, type: hvm, groups: [sto, gbg]}
+        - name: sto-vc
+          type: vmware
+          groups: [sto]
+          vcenter: {url: "https://vc.example.com/sdk", username: "{{ vault_vc.username }}", password: "{{ vault_vc.password }}", datacenter: DC1}
       vme_clusters:
         - name: sto-hvm01
           cloud: sto-hvm
           hosts: [hvm01, hvm02]
           datastores:
-            - {name: nfs01, type: nfs, host: 10.0.0.6, path: /a, default: true}
-            - {name: nfs02, type: nfs, host: 10.0.0.6, path: /b, default: true}
-    expect: only one datastore can be the default
-  # --- groups, clouds, clusters ---
-  - name: old admin_user key
-    patch: {defaults: {admin_user: hvmadmin}}
-    expect: admin_user is renamed hvm_admin_user
+            - {name: nfs01, type: nfs, host: 10.0.0.6, path: /export/vme, default: true}
+        - {name: gbg-hvm01, cloud: sto-hvm, group: gbg, hosts: [hvm03]}
+    children:
+      deploy_server:
+        hosts:
+          deploy: {ansible_host: 10.0.0.5, ansible_user: deploy, ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy"}
+      hvm:
+        vars:
+          platform: manual
+          ansible_user: hvmadmin
+          ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/hvm"
+          hvm_admin_password: "{{ vault_hvm_admin }}"
+        hosts:
+          hvm01:
+            ansible_host: 10.0.0.21
+            nics: {mgmt: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"], compute: ["aa:bb:cc:00:00:03", "aa:bb:cc:00:00:04"]}
+          hvm02:
+            ansible_host: 10.0.0.22
+            nics: {mgmt: ["aa:bb:cc:00:01:01", "aa:bb:cc:00:01:02"], compute: ["aa:bb:cc:00:01:03", "aa:bb:cc:00:01:04"]}
+          hvm03:
+            ansible_host: 10.0.0.23
+            nics: {mgmt: ["aa:bb:cc:00:02:01"], compute: ["aa:bb:cc:00:02:03"]}
+      vme_manager:
+        hosts:
+          hvm01:
+
+cases:
+  # --- shape, secrets, variables (argument specs) ---
+  - name: not a site inventory
+    patch: {all: {vars: {site: null}}}
+    expect: is not a vme-stack site inventory
+  - name: secret that does not resolve
+    patch: {all: {children: {hvm: {vars: {hvm_admin_password: "{{ no_such_variable }}"}}}}}
+    expect: "secrets that do not resolve"
+  - name: unknown key in a known dict
+    patch: {all: {vars: {network: {mtu: 9000}}}}
+    expect: "all.vars: network.mtu. Supported parameters include"
+  - name: wrong type
+    patch: {all: {vars: {network: {prefix: twenty}}}}
+    expect: "all.vars: argument 'prefix' is of type str found in 'network'"
+  - name: platform without a driver
+    patch: {all: {children: {hvm: {vars: {platform: pxe}}}}}
+    expect: "hvm01: value of platform must be one of: manual, redfish, got: pxe"
   - name: old bmc.credentials
     patch:
-      defaults: {platform: redfish}
-      hosts:
-        - name: hvm01
-          ip: 10.0.0.21
-          bmc: {address: 10.0.1.21, credentials: vault_ilo}
-          nics: {mgmt: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"], compute: ["aa:bb:cc:00:00:03", "aa:bb:cc:00:00:04"]}
-    expect: bmc.credentials is replaced by bmc.username and bmc.password
-  - name: old access block
-    patch: {access: {ssh_private_key: vme_stack}}
-    expect: "access is replaced: access.ssh_private_key -> deploy_server.ssh_private_key"
-  - name: old ssh_keys
-    patch: {defaults: {ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyExampleKeyExampleKey test"]}}
-    expect: ssh_keys is replaced by hvm_ssh_private_key
+      all:
+        children:
+          hvm:
+            vars: {platform: redfish}
+            hosts:
+              hvm01: {bmc: {address: 10.0.1.21, credentials: vault_ilo}}
+    expect: "hvm01: bmc.credentials. Supported parameters include"
+  # --- formats and rules (filter plugin) ---
+  - name: malformed MAC
+    patch: {all: {children: {hvm: {hosts: {hvm01: {nics: {mgmt: ["aa:bb:cc:00:00"]}}}}}}}
+    expect: is not a MAC address like
+  - name: ansible_host not an IPv4 address
+    patch: {all: {children: {hvm: {hosts: {hvm01: {ansible_host: hvm01.example.com}}}}}}
+    expect: is not an IPv4 address
+  - name: host name that is not a hostname
+    patch: {all: {children: {hvm: {hosts: {hvm_01: {ansible_host: 10.0.0.24, nics: {layout: shared, mgmt: ["aa:bb:cc:00:03:01"]}}}}}}}
+    expect: the inventory name becomes the hostname
+  - name: nics and netplan together
+    patch:
+      all:
+        children:
+          hvm:
+            hosts:
+              hvm01: {netplan: {version: 2}, hpe_vm: {mgmt_interface: bond0}}
+    expect: give either nics, or netplan + hpe_vm
+  - name: duplicate IP
+    patch: {all: {children: {hvm: {hosts: {hvm02: {ansible_host: 10.0.0.21}}}}}}
+    expect: IP 10.0.0.21 is used by more than one host
+  - name: duplicate MAC
+    patch: {all: {children: {hvm: {hosts: {hvm02: {nics: {mgmt: ["AA:BB:CC:00:00:01"]}}}}}}}
+    expect: MAC aa:bb:cc:00:00:01 is listed more than once
+  - name: IP outside the subnet
+    patch: {all: {children: {hvm: {hosts: {hvm01: {ansible_host: 10.0.1.21}}}}}}
+    expect: is not a usable address in 10.0.0.0/24
+  - name: host IP is the deploy server
+    patch: {all: {children: {hvm: {hosts: {hvm01: {ansible_host: 10.0.0.5}}}}}}
+    expect: is the deploy server
+  - name: dedicated layout without compute NICs
+    patch: {all: {children: {hvm: {hosts: {hvm01: {nics: {compute: null}}}}}}}
+    expect: needs nics.compute MACs
+  - name: shared layout with compute NICs
+    patch: {all: {children: {hvm: {hosts: {hvm01: {nics: {layout: shared}}}}}}}
+    expect: takes mgmt MACs only
+  - name: redfish without bmc
+    patch: {all: {children: {hvm: {vars: {platform: redfish}}}}}
+    expect: needs a bmc block
+  - name: manual with bmc
+    patch:
+      all:
+        children:
+          hvm:
+            hosts:
+              hvm01: {bmc: {address: 10.0.1.21, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}"}}
+    expect: does not use a bmc block
+  - name: seed_mode http not implemented
+    patch: {all: {vars: {media: {seed_mode: http}}}}
+    expect: is not implemented yet
+  - name: netplan mgmt interface not defined
+    patch:
+      all:
+        children:
+          hvm:
+            hosts:
+              hvm01:
+                nics: null
+                netplan: {version: 2, ethernets: {eno1: {addresses: ["10.0.0.21/24"]}}}
+                hpe_vm: {mgmt_interface: bond0}
+    expect: "hpe_vm.mgmt_interface 'bond0' is not defined in netplan"
+  - name: netplan IP not on the mgmt interface
+    patch:
+      all:
+        children:
+          hvm:
+            hosts:
+              hvm01:
+                nics: null
+                netplan: {version: 2, ethernets: {eno1: {addresses: ["10.0.0.99/24"]}}}
+                hpe_vm: {mgmt_interface: eno1}
+    expect: ip 10.0.0.21 is not among the addresses of 'eno1'
+  - name: netplan mgmt interface with DHCP
+    patch:
+      all:
+        children:
+          hvm:
+            hosts:
+              hvm01:
+                nics: null
+                netplan: {version: 2, ethernets: {eno1: {dhcp4: true, addresses: ["10.0.0.21/24"]}}}
+                hpe_vm: {mgmt_interface: eno1}
+    expect: uses DHCP
+  - name: compute interface is the parent of the mgmt VLAN
+    patch:
+      all:
+        children:
+          hvm:
+            hosts:
+              hvm01:
+                nics: null
+                netplan:
+                  version: 2
+                  ethernets: {eno1: {}}
+                  bonds: {bond0: {interfaces: [eno1]}}
+                  vlans: {bond0.100: {id: 100, link: bond0, addresses: ["10.0.0.21/24"]}}
+                hpe_vm: {mgmt_interface: bond0.100, compute_interface: bond0}
+    expect: is the parent of mgmt VLAN
+  - name: boot_disk as a by-id path
+    patch: {all: {children: {hvm: {vars: {boot_disk: /dev/disk/by-id/nvme-Example_0001}}}}}
+    expect: /dev/disk/by-* paths do not work
+  - name: boot_disk with an unknown match key
+    patch: {all: {children: {hvm: {vars: {boot_disk: {wwn: "0x5000"}}}}}}
+    expect: "boot_disk key 'wwn' is not one of"
+  - name: boot_disk path key with a by-id path
+    patch: {all: {children: {hvm: {vars: {boot_disk: {path: /dev/disk/by-id/nvme-Example_0001}}}}}}
+    expect: /dev/disk/by-* paths do not work
+  # --- deploy server and the Manager host ---
+  - name: two deploy servers
+    patch: {all: {children: {deploy_server: {hosts: {deploy2: {ansible_host: 10.0.0.6, ansible_user: deploy, ansible_ssh_private_key_file: k}}}}}}
+    expect: group deploy_server needs exactly one host (has 2)
   - name: deploy server without its key
-    patch: {deploy_server: {ssh_private_key: null}}
-    expect: "'ssh_private_key' is a required property"
-  - name: old vme_cluster block
-    patch: {vme_cluster: {ssh_private_key: vault_mgr_key, ssh_public_key: vault_mgr_pub}}
-    expect: Replaced by vme_groups, vme_clouds and vme_clusters
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {ansible_ssh_private_key_file: null}}}}}}
+    expect: needs ansible_user and ansible_ssh_private_key_file
+  - name: Manager settings without its host
+    patch: {all: {children: {vme_manager: null}}}
+    expect: group vme_manager needs exactly one host
+  - name: Manager on a host that is not an HVM host
+    patch: {all: {children: {vme_manager: {hosts: {hvm01: null, hvm09: {ansible_host: 10.0.0.29}}}}}}
+    expect: "group vme_manager: 'hvm09' is not an HVM host"
+  - name: Manager IP already used by a host
+    patch: {all: {vars: {vme_manager: {ip: 10.0.0.22}}}}
+    expect: vme_manager.ip 10.0.0.22 is already used
+  - name: Manager without the VME ISO
+    patch: {all: {vars: {media: {vme_iso: null}}}}
+    expect: vme_manager needs media.vme_iso
+  - name: Manager datastore not a cluster datastore
+    patch: {all: {vars: {vme_manager: {datastore: nfs99}}}}
+    expect: "vme_manager.datastore 'nfs99' is not one of cluster 'sto-hvm01' datastores"
+  - name: Manager datastore with the Manager host in no cluster
+    patch: {all: {vars: {vme_clusters: [{name: c1, cloud: sto-hvm, hosts: [hvm02]}]}}}
+    expect: "vme_manager.datastore needs the Manager host 'hvm01' in one of vme_clusters"
+  - name: clusters without the Manager's SSH key
+    patch: {all: {vars: {vme_manager: {ssh_private_key: null}}}}
+    expect: vme_clusters need vme_manager.ssh_private_key
+  # --- clusters ---
+  - name: cluster hosts with different interface names
+    patch:
+      all:
+        children:
+          hvm:
+            hosts:
+              hvm02:
+                nics: null
+                netplan: {version: 2, ethernets: {eno1: {addresses: ["10.0.0.22/24"]}}}
+                hpe_vm: {mgmt_interface: eno1}
+    expect: all hosts need the same mgmt/compute interface names
+  - name: cluster without hvm_admin_password
+    patch: {all: {children: {hvm: {vars: {hvm_admin_password: null}}}}}
+    expect: the hosts need hvm_admin_password
+  - name: cluster hosts with different hvm_admin_password
+    patch: {all: {children: {hvm: {hosts: {hvm02: {hvm_admin_password: "{{ vault_hvm02_admin }}"}}}}}}
+    expect: "all hosts need the same hvm_admin_password (the Manager uses one SSH login); the same password on: "
+  - name: cluster hosts with different ansible_user
+    patch: {all: {children: {hvm: {hosts: {hvm02: {ansible_user: other}}}}}}
+    expect: all hosts need the same ansible_user
+  - name: cluster without compute_vlans
+    patch: {all: {vars: {network: {compute_vlans: null}}}}
+    expect: network.compute_vlans is required
+  - name: two default datastores
+    patch:
+      all:
+        vars:
+          vme_manager: {datastore: null}
+          vme_clusters:
+            - name: sto-hvm01
+              cloud: sto-hvm
+              hosts: [hvm01, hvm02]
+              datastores:
+                - {name: nfs01, type: nfs, host: 10.0.0.6, path: /a, default: true}
+                - {name: nfs02, type: nfs, host: 10.0.0.6, path: /b, default: true}
+    expect: only one datastore can be the default
+  # --- groups, clouds, clusters ---
   - name: cloud in an unknown group
-    patch: {vme_clouds: [{name: sto-hvm, type: hvm, groups: [sto, malmo]}]}
+    patch: {all: {vars: {vme_clouds: [{name: sto-hvm, type: hvm, groups: [sto, malmo]}]}}}
     expect: "vme_clouds 'sto-hvm': group 'malmo' is not one of vme_groups"
   - name: cluster in an unknown cloud
-    patch: {vme_clusters: [{name: c1, cloud: nowhere, hosts: [hvm01]}], vme_manager: {datastore: null}}
+    patch: {all: {vars: {vme_clusters: [{name: c1, cloud: nowhere, hosts: [hvm01]}], vme_manager: {datastore: null}}}}
     expect: "vme_clusters 'c1': cloud 'nowhere' is not one of vme_clouds"
   - name: HVM cluster in a vCenter cloud
-    patch: {vme_clusters: [{name: c1, cloud: sto-vc, hosts: [hvm01]}], vme_manager: {datastore: null}}
+    patch: {all: {vars: {vme_clusters: [{name: c1, cloud: sto-vc, hosts: [hvm01]}], vme_manager: {datastore: null}}}}
     expect: "cloud 'sto-vc' is type vmware; HVM clusters need type hvm"
   - name: cluster group not one of its cloud's groups
     patch:
-      vme_groups: [{name: sto}, {name: gbg}, {name: malmo}]
-      vme_clusters: [{name: c1, cloud: sto-hvm, group: malmo, hosts: [hvm01]}]
-      vme_manager: {datastore: null}
+      all:
+        vars:
+          vme_groups: [{name: sto}, {name: gbg}, {name: malmo}]
+          vme_clusters: [{name: c1, cloud: sto-hvm, group: malmo, hosts: [hvm01]}]
+          vme_manager: {datastore: null}
     expect: "group 'malmo' is not one of cloud 'sto-hvm' groups: sto, gbg"
   - name: host in two clusters
     patch:
-      vme_clusters:
-        - {name: c1, cloud: sto-hvm, hosts: [hvm01, hvm02]}
-        - {name: c2, cloud: sto-hvm, hosts: [hvm02]}
-      vme_manager: {datastore: null}
+      all:
+        vars:
+          vme_clusters:
+            - {name: c1, cloud: sto-hvm, hosts: [hvm01, hvm02]}
+            - {name: c2, cloud: sto-hvm, hosts: [hvm02]}
+          vme_manager: {datastore: null}
     expect: "vme_clusters 'c2': host 'hvm02' is already in cluster 'c1'"
   - name: two clouds with one name
-    patch: {vme_clouds: [{name: sto-hvm, type: hvm, groups: [sto]}, {name: sto-hvm, type: hvm, groups: [gbg]}]}
+    patch: {all: {vars: {vme_clouds: [{name: sto-hvm, type: hvm, groups: [sto]}, {name: sto-hvm, type: hvm, groups: [gbg]}]}}}
     expect: "vme_clouds: name 'sto-hvm' is used more than once"
   - name: vCenter cloud without vcenter
-    patch: {vme_clouds: [{name: sto-hvm, type: hvm, groups: [sto]}, {name: sto-vc, type: vmware, groups: [sto]}]}
-    expect: "'vcenter' is a required property"
+    patch: {all: {vars: {vme_clouds: [{name: sto-hvm, type: hvm, groups: [sto]}, {name: sto-vc, type: vmware, groups: [sto]}]}}}
+    expect: "vme_clouds 'sto-vc': vcenter is needed for type vmware and only for it"
   - name: vcenter on an HVM cloud
     patch:
-      vme_clouds:
-        - name: sto-hvm
-          type: hvm
-          groups: [sto]
-          vcenter: {url: "https://vc.example.com/sdk", username: "{{ vault_vc.username }}", password: "{{ vault_vc.password }}", datacenter: DC1}
-    expect: vcenter is only for clouds of type vmware
-  - name: clusters without the Manager's SSH key
-    patch: {vme_manager: {ssh_private_key: null}}
-    expect: vme_clusters need vme_manager.ssh_private_key
-  - name: Manager datastore with the Manager host in no cluster
-    patch:
-      vme_clusters: [{name: c1, cloud: sto-hvm, hosts: [hvm02]}]
-    expect: "vme_manager.datastore needs vme_manager.host 'hvm01' in one of vme_clusters"
-  - name: boot_disk as a by-id path
-    patch: {defaults: {boot_disk: /dev/disk/by-id/nvme-Example_0001}}
-    expect: /dev/disk/by-* paths do not work
-  - name: boot_disk with an unknown match key
-    patch: {defaults: {boot_disk: {wwn: "0x5000"}}}
-    expect: "or installer match keys (serial, model"
-  - name: boot_disk path key with a by-id path
-    patch: {defaults: {boot_disk: {path: /dev/disk/by-id/nvme-Example_0001}}}
-    expect: /dev/disk/by-* paths do not work
+      all:
+        vars:
+          vme_clouds:
+            - name: sto-hvm
+              type: hvm
+              groups: [sto]
+              vcenter: {url: "https://vc.example.com/sdk", username: "{{ vault_vc.username }}", password: "{{ vault_vc.password }}", datacenter: DC1}
+    expect: "vme_clouds 'sto-hvm': vcenter is needed for type vmware and only for it"

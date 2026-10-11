@@ -167,4 +167,4 @@
   ansible.builtin.set_fact:
     vme_manager_group: "{{ cl.group }}"
     vme_manager_cluster_ds: "{{ ds_state.json.datastores | default([]) }}"
-  when: vme_manager.host in cl.hosts
+  when: manager.host in cl.hosts

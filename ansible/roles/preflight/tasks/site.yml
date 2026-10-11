@@ -1,0 +1,120 @@
+---
+# --- The site inventory: secrets, variables, rules (no machine is contacted) ---
+# Over the whole site, also with --limit; every problem of a step listed at once.
+
+# Secrets first: everything after resolves them. Only their names are shown.
+- name: Check the site's secrets resolve
+  run_once: true
+  ansible.builtin.assert:
+    that: unresolved | length == 0
+    fail_msg: "{{ ['secrets that do not resolve (vault not loaded: --ask-vault-pass or .vault_pass; or the variable they name is missing):'] + unresolved }}"
+    quiet: true
+  vars:
+    unresolved: >-
+      {%- set out = [] -%}
+      {%- for h in groups['hvm'] -%}
+      {%-   set v = hostvars[h] -%}
+      {%-   if 'hvm_admin_password' in v and not v.hvm_admin_password | default('', true) | string -%}
+      {{-     out.append(h ~ ': hvm_admin_password') -}}
+      {%-   endif -%}
+      {%-   for k in ['username', 'password'] if k in v.bmc | default({}) and not v.bmc[k] | default('', true) | string -%}
+      {{-     out.append(h ~ ': bmc.' ~ k) -}}
+      {%-   endfor -%}
+      {%- endfor -%}
+      {%- for k in ['admin_password', 'license_key', 'ssh_private_key', 'ssh_public_key']
+            if k in vme_manager | default({}) and not vme_manager[k] | default('', true) | string -%}
+      {{-   out.append('vme_manager.' ~ k) -}}
+      {%- endfor -%}
+      {%- for c in vme_clouds | default([]) if c.vcenter is defined -%}
+      {%-   for k in ['username', 'password'] if k in c.vcenter and not c.vcenter[k] | default('', true) | string -%}
+      {{-     out.append('vme_clouds ' ~ c.name ~ ': vcenter.' ~ k) -}}
+      {%-   endfor -%}
+      {%- endfor -%}
+      {{ out }}
+
+# Each variable on its own: type, required, allowed values, unknown keys of the
+# known dicts (meta/argument_specs.yml).
+- name: Check the site-wide variables
+  run_once: true
+  ansible.builtin.validate_argument_spec:
+    argument_spec: "{{ specs.argument_specs.site_settings.options }}"
+  vars:
+    specs: "{{ lookup('ansible.builtin.file', role_path ~ '/meta/argument_specs.yml') | from_yaml }}"
+  register: site_spec
+  failed_when: false
+
+- name: Check this host's variables
+  ansible.builtin.validate_argument_spec:
+    argument_spec: "{{ specs.argument_specs.hvm_host.options }}"
+  vars:
+    specs: "{{ lookup('ansible.builtin.file', role_path ~ '/meta/argument_specs.yml') | from_yaml }}"
+  register: host_spec
+  failed_when: false
+
+- name: Variables with problems
+  run_once: true
+  ansible.builtin.assert:
+    that: spec_problems | length == 0
+    fail_msg: "{{ ['site variables with problems:'] + spec_problems }}"
+    quiet: true
+  vars:
+    spec_problems: >-
+      {%- set out = site_spec.argument_errors | default([]) | map('regex_replace', '^', 'all.vars: ') | list -%}
+      {%- for h in ansible_play_hosts_all -%}
+      {%-   for e in hostvars[h].host_spec.argument_errors | default([]) -%}{{ out.append(h ~ ': ' ~ e) }}{%- endfor -%}
+      {%- endfor -%}
+      {{ out }}
+
+# Formats and rules across variables, over a view of the inventory: per HVM host
+# its resolved values (passwords only as hashes), the deploy server, the groups.
+- name: "Check the site rules: {{ inventory_file }}"
+  run_once: true
+  ansible.builtin.assert:
+    that: site_problems | length == 0
+    fail_msg: "{{ ['the site has ' ~ site_problems | length ~ ' problem(s):'] + site_problems }}"
+    quiet: true
+  vars:
+    site_problems: "{{ site_view | vme_site_errors(role_path ~ '/..') }}"
+    site_view: >-
+      {%- set hosts = [] -%}
+      {%- for h in groups['hvm'] -%}
+      {%-   set v = hostvars[h] -%}
+      {%-   set host = {'name': h, 'ip': v.ansible_host | default(h), 'platform': v.platform | default(''),
+                        'layout': v.host_nic_layout, 'admin_user': v.ansible_user | default(''),
+                        'admin_password_hash': v.hvm_admin_password | default('', true) | string | hash('sha256')
+                                               if v.hvm_admin_password | default('', true) | string else '',
+                        'ssh_keys': v.hvm_ssh_keys | default([]), 'boot_disk': v.boot_disk | default('auto'),
+                        'bmc': 'bmc' in v, 'mgmt_interface': v.mgmt_interface,
+                        'compute_interface': v.compute_interface} -%}
+      {%-   for k in ['nics', 'netplan', 'hpe_vm'] if k in v -%}
+      {{-     host.update({k: v[k]}) -}}
+      {%-   endfor -%}
+      {{-   hosts.append(host) -}}
+      {%- endfor -%}
+      {%- set deploy = [] -%}
+      {%- for d in groups['deploy_server'] | default([]) -%}
+      {%-   set v = hostvars[d] -%}
+      {{-   deploy.append({'name': d, 'address': v.ansible_host | default(d),
+                           'local': v.ansible_connection | default('ssh') == 'local',
+                           'user': 'ansible_user' in v, 'key': 'ansible_ssh_private_key_file' in v}) -}}
+      {%- endfor -%}
+      {%- set mgr = none -%}
+      {%- if vme_manager is defined -%}
+      {%-   set mgr = {'ip': vme_manager.ip, 'hostname': vme_manager.hostname,
+                       'url': vme_manager.url | default(''), 'admin_user': vme_manager.admin_user | default('vmeadmin'),
+                       'email': vme_manager.email | default(''), 'datastore': vme_manager.datastore | default(''),
+                       'has_private_key': 'ssh_private_key' in vme_manager,
+                       'ssh_public_key': vme_manager.ssh_public_key | default('')} -%}
+      {%- endif -%}
+      {%- set clouds = [] -%}
+      {%- for c in vme_clouds | default([]) -%}
+      {%-   set cloud = {'name': c.name, 'type': c.type, 'groups': c.groups} -%}
+      {%-   if c.vcenter is defined -%}
+      {{-     cloud.update({'vcenter': {'url': c.vcenter.url}}) -}}
+      {%-   endif -%}
+      {{-   clouds.append(cloud) -}}
+      {%- endfor -%}
+      {{ {'site': site, 'media': media, 'network': network, 'ssh_jump': ssh_jump | default(''),
+          'hosts': hosts, 'deploy': deploy, 'manager_hosts': groups['vme_manager'] | default([]),
+          'vme_manager': mgr, 'vme_groups': vme_groups | default([]), 'vme_clouds': clouds,
+          'vme_clusters': vme_clusters | default([])} }}

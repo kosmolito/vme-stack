@@ -27,15 +27,22 @@
     mode: "0600"
     content: "{{ {'vault': vault_data, 'secrets': secret_values} | to_json }}"
   vars:
-    vault_file: "{{ hostvars[groups['hvm'][0]].vme_site_file | dirname }}/group_vars/all/vault.yml"
+    vault_file: "{{ hostvars[groups['hvm'][0]].inventory_dir }}/group_vars/all/vault.yml"
     vault_data: "{{ lookup('ansible.builtin.file', vault_file, errors='ignore') | default('', true) | from_yaml or {} }}"
     secret_values: >-
       {%- set out = [] -%}
       {%- for h in groups['hvm'] -%}
-      {%-   for v in (hostvars[h].secrets | default({})).values() -%}{{ out.append(v | default('', true) | string) }}{%- endfor -%}
+      {%-   set v = hostvars[h] -%}
+      {{-   out.append(v.hvm_admin_password | default('', true) | string) -}}
+      {%-   for k in ['username', 'password'] -%}{{ out.append((v.bmc | default({}))[k] | default('', true) | string) }}{%- endfor -%}
       {%- endfor -%}
-      {%- for v in (hostvars[groups['hvm'][0]].site_secrets | default({})).values() -%}{{ out.append(v | default('', true) | string) }}{%- endfor -%}
-      {{ out }}
+      {%- for k in ['admin_password', 'license_key', 'ssh_private_key', 'ssh_public_key'] -%}
+      {{-   out.append((vme_manager | default({}))[k] | default('', true) | string) -}}
+      {%- endfor -%}
+      {%- for c in vme_clouds | default([]) if c.vcenter is defined -%}
+      {%-   for k in ['username', 'password'] -%}{{ out.append(c.vcenter[k] | default('', true) | string) }}{%- endfor -%}
+      {%- endfor -%}
+      {{ out | select | list }}
   no_log: true
 
 # Unpack, replace the secrets, pack: Python only (the EE image has no tar).

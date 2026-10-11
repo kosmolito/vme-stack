@@ -1,0 +1,14 @@
+# Per HVM host, derived from the site inventory for the roles (names a site never
+# sets; see group_vars/all.yml).
+ip: "{{ ansible_host }}"                              # the host's static mgmt IP
+admin_user: "{{ ansible_user }}"                      # created by the install
+admin_password: "{{ hvm_admin_password | default('') }}"
+host_nic_layout: "{{ nics.layout | default(nic_layout | default('dedicated')) if nics is defined else '' }}"
+# The interfaces HPE's cluster join uses (build-ovs.sh -m/-c): from hpe_vm with raw
+# netplan, else from the nics layout (bond0[.vlan] / bond1).
+mgmt_interface: >-
+  {{ hpe_vm.mgmt_interface if hpe_vm is defined
+     else ('bond0.' ~ mgmt_vlan if host_nic_layout == 'dedicated' and mgmt_vlan | int > 0 else 'bond0') }}
+compute_interface: >-
+  {{ hpe_vm.compute_interface | default('') if hpe_vm is defined
+     else ('bond1' if host_nic_layout == 'dedicated' else '') }}

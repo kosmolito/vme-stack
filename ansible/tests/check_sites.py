@@ -1,50 +1,71 @@
 #!/usr/bin/env python3
-"""Check site files without running Ansible (no vault, no lab): schema + site rules.
+"""Check site inventories with validate.yml (what preflight checks first), no machines.
 
     check_sites.py <site.yml> ...     every file must pass (exit 1 otherwise)
     check_sites.py --cases <cases>    each case must fail with its expected message
 
-The schema check and its messages come from the inventory plugin, the site rules
-from the filter plugin, so this tests exactly what preflight runs.
+Each site file is copied alone into a temporary directory (an encrypted vault next
+to it is not loaded) and gets a dummy value for every "{{ vault_... }}" it refers
+to, so the checks run without the vault: in CI and for the lab alike.
 """
 
 import argparse
 import copy
-import importlib.util
-import json
+import os
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import yaml
-from jsonschema import Draft202012Validator
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent  # the ansible/ project
-ROLES = ROOT / "roles"
+VAULT_REF = re.compile(r"\{\{\s*(vault_\w+)(?:\.(\w+))?\s*\}\}")
+# ansible-playbook next to this Python (the .venv), else from PATH
+_beside = Path(sys.executable).parent / "ansible-playbook"
+ANSIBLE_PLAYBOOK = str(_beside) if _beside.exists() else (shutil.which("ansible-playbook") or "ansible-playbook")
+DUMMY_PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDummyDummyDummyDummyDummyDummyDummyDummy check"
 
 
-def _load(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def dummy_vault(text):
+    """A value for every vault variable the site refers to ({name} or {name: {field}})."""
+    out = {}
+    for name, field in VAULT_REF.findall(text):
+        value = DUMMY_PUBLIC_KEY if "public_key" in (field or name) else f"dummy-{name}-{field or 'value'}"
+        if field:  # also used with a field somewhere: a dict wins over a plain value
+            out[name] = out[name] if isinstance(out.get(name), dict) else {}
+            out[name][field] = value
+        else:
+            out.setdefault(name, value)
+    return out
 
 
-inventory = _load("vme_site_inventory", ROOT / "plugins/inventory/vme_site.py")
-rules = _load("vme_site_filter", ROOT / "plugins/filter/vme_site.py")
-VALIDATOR = Draft202012Validator(json.loads(inventory.SCHEMA.read_text()))
-
-
-def problems(site):
-    """Everything the inventory plugin and preflight would report, as strings."""
-    errs = sorted(VALIDATOR.iter_errors(site), key=lambda e: list(map(str, e.absolute_path)))
-    if errs:  # like the plugin: schema problems stop before the rules run
-        return list(dict.fromkeys(f"{inventory._path(e)}: {inventory._message(e)}" for e in errs))
-    names = [h["name"] for h in site["hosts"]] + [site["deploy_server"].get("name", "deploy")]
-    dupes = sorted({n for n in names if names.count(n) > 1})
-    if dupes:
-        return [f"names used more than once: {', '.join(dupes)}"]
-    return rules.vme_site_errors(site, str(ROLES))
+def validate(inventory_text):
+    """Run validate.yml on an inventory; return (passed, output)."""
+    with tempfile.TemporaryDirectory(prefix="vme-check-") as d:
+        inv = Path(d) / "site.yml"
+        inv.write_text(inventory_text)
+        extra = Path(d) / "vault.yml"
+        extra.write_text(yaml.safe_dump(dummy_vault(inventory_text)))
+        env = dict(
+            os.environ,
+            ANSIBLE_CONFIG=str(ROOT / "ansible.cfg"),
+            ANSIBLE_NOCOLOR="1",
+            ANSIBLE_FORCE_COLOR="0",
+            ANSIBLE_LOG_PATH="",
+        )
+        r = subprocess.run(
+            [ANSIBLE_PLAYBOOK, str(ROOT / "validate.yml"), "-i", str(inv), "-e", f"@{extra}"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            env=env,
+        )
+        return r.returncode == 0, r.stdout + r.stderr
 
 
 def merge(base, patch):
@@ -60,31 +81,38 @@ def merge(base, patch):
     return out
 
 
+def problems_of(output):
+    """The problem lines of a failed run (for the report)."""
+    lines = [ln.strip().strip('",') for ln in output.splitlines()]
+    return [ln for ln in lines if ln and (": " in ln) and not ln.startswith(("TASK", "PLAY", "ok:", "fatal:"))][:12]
+
+
 def check_files(paths):
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda p: validate(Path(p).read_text()), paths))
     failed = 0
-    for p in paths:
-        found = problems(yaml.safe_load(Path(p).read_text()))
-        print(f"{'FAIL' if found else 'ok  '} {p}")
-        for f in found:
-            print(f"       {f}")
-        failed += bool(found)
+    for p, (ok, out) in zip(paths, results, strict=True):
+        print(f"{'ok  ' if ok else 'FAIL'} {p}")
+        if not ok:
+            print("       " + "\n       ".join(problems_of(out)))
+        failed += not ok
     return failed
 
 
 def check_cases(path):
     doc = yaml.safe_load(Path(path).read_text())
     base = doc["base"]
+    cases = [{"name": "base site passes", "patch": {}, "expect": None}] + doc["cases"]
+    texts = [yaml.safe_dump(merge(base, c["patch"]), sort_keys=False) for c in cases]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(validate, texts))
     failed = 0
-    found = problems(base)
-    print(f"{'FAIL' if found else 'ok  '} base site passes")
-    failed += bool(found)
-    for case in doc["cases"]:
-        found = problems(merge(base, case["patch"]))
-        hit = any(case["expect"] in f for f in found)
+    for case, (ok, out) in zip(cases, results, strict=True):
+        hit = ok if case["expect"] is None else (not ok and case["expect"] in out)
         print(f"{'ok  ' if hit else 'FAIL'} {case['name']}")
         if not hit:
-            print(f"       expected: {case['expect']}")
-            print(f"       got:      {found or 'no problems'}")
+            print(f"       expected: {case['expect'] or 'no problems'}")
+            print("       got:      " + ("\n                 ".join(problems_of(out)) or "no problems"))
         failed += not hit
     return failed
 

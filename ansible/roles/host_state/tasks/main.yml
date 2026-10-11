@@ -5,7 +5,7 @@
   ansible.builtin.assert:
     that: ansible_limit is defined
     fail_msg: "force_reinstall reinstalls hosts; run it with --limit <host> so it cannot hit the whole inventory"
-  when: force_reinstall | bool
+  when: install_force
 
 - name: Probe for an SSH banner on {{ ansible_host }}
   ansible.builtin.wait_for:
@@ -63,11 +63,11 @@
 
 - name: Decide whether to install
   ansible.builtin.set_fact:
-    install_now: "{{ force_reinstall | bool or not hvm_installed | bool }}"
+    install_now: "{{ install_force or not hvm_installed | bool }}"
 
 - name: Guard - the IP must not belong to something else
   ansible.builtin.assert:
-    that: not ip_taken | bool or force_reinstall | bool
+    that: not ip_taken | bool or install_force
     fail_msg: >-
       {{ ansible_host }} answers SSH but is not {{ inventory_hostname }}
       (got '{{ existing_hostname.stdout | default('no login') | trim }}').
@@ -77,7 +77,7 @@
   ansible.builtin.debug:
     msg: >-
       {{ inventory_hostname }}:
-      {{ 'reinstall forced' if force_reinstall | bool
+      {{ 'reinstall forced' if install_force
          else ('already installed, skipping install stages' if hvm_installed | bool
          else ('its installer is running (' ~ installer_id ~ ')' if installer_id | length > 0
          else 'not installed, installing')) }}

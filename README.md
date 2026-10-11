@@ -40,16 +40,22 @@ sites/acme/
   build/                      # rendered seeds and ISO URLs (written by runs)
 ```
 
-**Keys belong in the site directory.** In `site.yml` write them relative to the
-file: `deploy_server.ssh_private_key: keys/deploy_server`,
-`defaults.hvm_ssh_private_key: keys/hvm_hosts` (one file for both works too). The
-container sees only the site directory, so a key elsewhere is not found.
+The site file is a plain **Ansible inventory**: site-wide settings in `all.vars`,
+the deploy server in group `deploy_server`, the HVM hosts in group `hvm` (with
+their defaults as group vars), the Manager's host in group `vme_manager`. Every
+setting, commented: [`sites/example/site.yml`](sites/example/site.yml).
+
+**Keys belong in the site directory.** Point to them from the inventory:
+`ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy_server"` for the
+deploy server and `".../keys/hvm_hosts"` for group `hvm` (one file for both works
+too). The container sees only the site directory, so a key elsewhere is not found.
 
 Set it up from the reference site ([`sites/example/README.md`](sites/example/README.md)
 has the details), then check everything (changes nothing) and deploy:
 
 ```bash
 cd sites/acme
+ansible-navigator run validate.yml         # the site file only, contacts nothing
 ansible-navigator run preflight.yml
 ansible-navigator run deploy.yml
 ```
@@ -77,7 +83,7 @@ More on running the container (without navigator, from a Mac, emergency hotfixes
 
 | Folder | What it is |
 |---|---|
-| `ansible/` | the pipeline: playbooks, roles, site file schema |
+| `ansible/` | the pipeline: playbooks, roles, the site settings (`roles/preflight/meta/argument_specs.yml`) |
 | `ee/` | the container image (execution environment) and how it is released |
 | `sites/example/` | a site with every setting; real sites stay out of this repository (gitignored) |
 | `spec.md` | the specification, with a log of all design decisions |

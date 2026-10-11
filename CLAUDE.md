@@ -15,7 +15,7 @@ Everything Ansible needs is in the EE `vme-stack-ee` (build: `ee/build.sh`; usag
 ```bash
 cd ansible
 SITE=<path to>/site.yml
-ansible-inventory -i $SITE --graph                       # schema check + inventory
+ansible-playbook validate.yml -i $SITE                  # the site inventory only (variables, rules), contacts nothing
 ansible-playbook preflight.yml -i $SITE                  # stage 1 only, changes nothing
 ansible-playbook media.yml -i $SITE                      # build + publish ISOs, write build/<host>/iso_url
 ansible-playbook deploy.yml -i $SITE --vault-password-file <site dir>/.vault_pass   # whole pipeline
@@ -25,7 +25,7 @@ ansible-playbook collect.yml -i $SITE    # support bundle (logs + state, secrets
 # run log + bundle like the EE: python3 tools/vme_stack_run.py ansible-playbook ... (VME_STACK_DEBUG=1)
 ```
 
-Site data lives only in the site file (schema: `ansible/schemas/site.schema.json`); tuning defaults in `ansible/group_vars/all.yml`. The pipeline never touches a hypervisor: VMs are servers booted by someone else (`platform: manual`). Example sites: `ansible/examples/` (guided), `sites/example/` (every setting).
+Site data lives only in the site file, a plain Ansible inventory (settings: `ansible/roles/preflight/meta/argument_specs.yml`, rules: `ansible/plugins/filter/vme_site.py`); `ansible/group_vars/` only derives what the roles read and must never define a name a site sets (it would override the site). The pipeline never touches a hypervisor: VMs are servers booted by someone else (`platform: manual`). Example sites: `ansible/examples/` (guided), `sites/example/` (every setting).
 
 ## Checks and releases
 

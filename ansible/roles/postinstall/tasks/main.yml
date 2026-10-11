@@ -133,7 +133,7 @@
       register: bonds
       changed_when: false
       loop: "{{ [{'bond': 'bond0', 'members': nics.mgmt}] +
-                ([{'bond': 'bond1', 'members': nics.compute}] if nics.layout == 'dedicated' else []) }}"
+                ([{'bond': 'bond1', 'members': nics.compute}] if host_nic_layout == 'dedicated' else []) }}"
 
     - name: Check bond mode and members
       ansible.builtin.assert:
@@ -198,7 +198,7 @@
   delegate_to: "{{ deploy_host }}"
   register: iso_rm
   changed_when: iso_rm.stdout | length > 0
-  when: not keep_host_iso | bool
+  when: not install_keep_iso | bool
 
 # Without this record, the next lab `terraform apply` detaches the ISO and
 # deletes the hypervisor's copy.
@@ -207,4 +207,4 @@
     path: "{{ playbook_dir }}/build/{{ inventory_hostname }}/iso_url"
     state: absent
   delegate_to: localhost
-  when: not keep_host_iso | bool
+  when: not install_keep_iso | bool

@@ -22,8 +22,8 @@ Both need:
   acme/
     site.yml
     ansible-navigator.yml
-    keys/vme-stack               # SSH private key (chmod 600): deploy_server.ssh_private_key and
-                                 # defaults.hvm_ssh_private_key (one key for both, or two files)
+    keys/vme-stack               # SSH private key (chmod 600): ansible_ssh_private_key_file of the
+                                 # deploy server and of group hvm (one key for both, or two files)
     group_vars/all/vault.yml     # from vault.example.yml, then: ansible-vault encrypt
     .vault_pass                  # the vault password (chmod 600)
     logs/  build/                # empty; runs write here
@@ -133,4 +133,4 @@ missing). Each BMC has its own
 ## Mixing
 
 `platform` can be set per host, e.g. physical servers plus one VM:
-`defaults.platform: redfish` and `platform: manual` on the VM.
+`platform: redfish` in the `hvm` group vars and `platform: manual` on the VM's host.

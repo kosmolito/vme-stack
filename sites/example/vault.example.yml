@@ -1,10 +1,10 @@
 # Every secret site.yml refers to ("{{ vault_... }}"). Template only: it is not loaded from here.
 # Copy to group_vars/all/vault.yml, fill in, then: ansible-vault encrypt group_vars/all/vault.yml
 
-# Hosts' admin user (defaults.hvm_admin_password); the Manager logs in with it to build clusters
+# Hosts' admin user (hvm_admin_password, group hvm); the Manager logs in with it to build clusters
 vault_hvm_admin_password: "<password of the hosts' admin user>"
 
-# BMC logins (hosts[].bmc.username/password: "{{ vault_ilo.username }}", ...); one per server works too
+# BMC logins (the hosts' bmc.username/password: "{{ vault_ilo.username }}", ...); one per server works too
 vault_ilo: { username: "<iLO user>", password: "<iLO password>" }
 vault_idrac: { username: "<iDRAC user>", password: "<iDRAC password>" }
 

@@ -1,19 +1,19 @@
 ---
 # libvirt autostart of the Manager VM on its host, as the site file says
-# (vme_manager.autostart, default false = HPE's default: hpe-vm leaves it off).
+# (manager.autostart, default false = HPE's default: hpe-vm leaves it off).
 - name: Read the Manager VM's autostart setting
   ansible.builtin.shell: |
     set -o pipefail
-    virsh dominfo {{ vme_manager.hostname | quote }} | awk '/^Autostart/ {print $2}'
+    virsh dominfo {{ manager.hostname | quote }} | awk '/^Autostart/ {print $2}'
   args:
     executable: /bin/bash
   become: true
   register: mgr_autostart
   changed_when: false
 
-- name: Set the Manager VM's autostart to {{ 'on' if vme_manager.autostart | bool else 'off' }}
+- name: Set the Manager VM's autostart to {{ 'on' if manager.autostart | bool else 'off' }}
   ansible.builtin.command:
-    argv: "{{ ['virsh', 'autostart', vme_manager.hostname] + ([] if vme_manager.autostart | bool else ['--disable']) }}"
+    argv: "{{ ['virsh', 'autostart', manager.hostname] + ([] if manager.autostart | bool else ['--disable']) }}"
   become: true
-  when: (mgr_autostart.stdout | trim == 'enable') != (vme_manager.autostart | bool)
+  when: (mgr_autostart.stdout | trim == 'enable') != (manager.autostart | bool)
   changed_when: true

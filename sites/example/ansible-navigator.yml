@@ -1,6 +1,7 @@
 ---
 # ansible-navigator settings for this site directory: run vme-stack from here.
 #   cd sites/acme
+#   ansible-navigator run validate.yml           # the site file only, contacts nothing
 #   ansible-navigator run preflight.yml          # then deploy.yml, or one stage:
 #                                                # hvm_hosts.yml, vme_manager.yml, vme_cluster.yml
 #   VME_STACK_DEBUG=1 ansible-navigator run deploy.yml   # verbose + support bundle in logs/

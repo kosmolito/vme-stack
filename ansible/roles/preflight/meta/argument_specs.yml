@@ -1,0 +1,140 @@
+---
+# The site inventory's variables: types, required, allowed values, nested keys.
+# Preflight validates them (ansible.builtin.validate_argument_spec) before anything
+# changes: entry point "site_settings" against all.vars, "hvm_host" against each HVM
+# host. (Not named after a task file: Ansible would then check them on its own,
+# host by host, instead of preflight's one list.)
+# Rules across variables (unique IPs/MACs, IP in the subnet, references between
+# Manager objects, formats) are in plugins/filter/vme_site.py.
+# Reference with every setting: sites/example/site.yml.
+argument_specs:
+  site_settings:
+    short_description: Settings of the whole site (all.vars of the site inventory)
+    options:
+      site:
+        description: Short site name (run logs, Manager tenant default).
+        type: str
+        required: true
+      media:
+        description: Install media on the deploy server.
+        type: dict
+        required: true
+        options:
+          hvm_iso: {type: str, required: true, description: Path of HPE's stock HVM install ISO on the deploy server.}
+          vme_iso: {type: str, description: Path of HPE's VM Essentials software ISO (the Manager image); needed with vme_manager.}
+          seed_mode: {type: str, choices: [embedded, http], description: "How the seed reaches the installer; only embedded is implemented."}
+          www_root: {type: str, description: "Directory nginx serves (default /srv/vme-stack/www)."}
+          work_dir: {type: str, description: "Scratch directory for ISO builds (default /srv/vme-stack/work)."}
+          port: {type: int, description: nginx port (default 8080).}
+          url: {type: str, description: "Base URL hosts and BMCs fetch media from (default http://<deploy server>:<port>)."}
+      network:
+        description: The mgmt network all hosts share.
+        type: dict
+        required: true
+        options:
+          domain: {type: str, required: true}
+          gateway: {type: str, required: true}
+          prefix: {type: int, required: true}
+          mgmt_vlan: {type: int, description: "802.1Q tag of the mgmt network, 0 = untagged (default)."}
+          dns: {type: list, elements: str, required: true}
+          ntp: {type: list, elements: str, required: true, description: "NTP servers, addresses or names."}
+          timezone: {type: str, description: "IANA time zone (default UTC)."}
+          proxy: {type: str, description: HTTP proxy for the installer and apt.}
+          bond_mode: {type: str, choices: [active-backup, 802.3ad]}
+          compute_vlans: {type: list, elements: int, description: VM VLANs on the compute bridge (cluster creation).}
+      ssh_jump:
+        description: SSH jump host (user@host) to the deploy server and the hosts, logged in with the deploy server's key.
+        type: str
+      vme_manager:
+        description: The VME Manager VM, installed by HPE's hpe-vm on the host in group vme_manager.
+        type: dict
+        options:
+          ip: {type: str, required: true}
+          hostname: {type: str, required: true}
+          url: {type: str, description: "Appliance URL (default https://<ip>); a name must resolve to ip on every network.dns server."}
+          size: {type: str, choices: [S, M, L]}
+          admin_user: {type: str}
+          admin_password: {type: str, required: true, no_log: true}
+          tenant: {type: str}
+          email: {type: str}
+          license_key: {type: str, no_log: true}
+          datastore: {type: str, description: A datastore of the Manager host's cluster to move the Manager's disk to.}
+          autostart: {type: bool}
+          ssh_private_key: {type: str, no_log: true, description: The Manager's private key to every cluster's hosts.}
+          ssh_public_key: {type: str}
+      vme_groups:
+        type: list
+        elements: dict
+        options:
+          name: {type: str, required: true}
+      vme_clouds:
+        type: list
+        elements: dict
+        options:
+          name: {type: str, required: true}
+          type: {type: str, required: true, choices: [hvm, vmware]}
+          groups: {type: list, elements: str, required: true}
+          vcenter:
+            type: dict
+            options:
+              url: {type: str, required: true}
+              username: {type: str, required: true}
+              password: {type: str, required: true, no_log: true}
+              datacenter: {type: str, required: true}
+              cluster: {type: str}
+              import_existing: {type: bool}
+      vme_clusters:
+        type: list
+        elements: dict
+        options:
+          name: {type: str, required: true}
+          cloud: {type: str, required: true}
+          group: {type: str}
+          hosts: {type: list, elements: str, required: true}
+          layout: {type: str}
+          datastores:
+            type: list
+            elements: dict
+            options:
+              name: {type: str, required: true}
+              type: {type: str, required: true, choices: [nfs]}
+              host: {type: str, required: true}
+              path: {type: str, required: true}
+              version: {type: str, choices: ["3", "4"]}
+              default: {type: bool}
+      wait_ssh_timeout: {type: int, description: "Seconds to wait for an installed host (default 2700)."}
+      force_reinstall: {type: bool, description: Reinstall hosts that are installed already (only with --limit).}
+      keep_host_iso: {type: bool, description: Keep the per-host ISO on the deploy server after the install.}
+
+  hvm_host:
+    short_description: Settings of an HVM host (group vars of hvm and host vars)
+    options:
+      platform: {type: str, required: true, choices: [manual, redfish], description: "How the host boots its ISO."}
+      ansible_host: {type: str, required: true, description: The host's static IP on the mgmt network.}
+      ansible_user: {type: str, required: true, description: The admin user the install creates.}
+      ansible_ssh_private_key_file: {type: str, required: true, description: "Its key; the public key is installed."}
+      hvm_admin_password: {type: str, no_log: true, description: Password of the admin user; needed by vme_clusters.}
+      hvm_ssh_keys: {type: list, elements: str, description: Extra public keys for the admin user.}
+      boot_disk: {type: raw, description: "auto, a kernel name (/dev/sda) or installer match keys."}
+      nic_layout: {type: str, choices: [dedicated, shared]}
+      nics:
+        type: dict
+        options:
+          layout: {type: str, choices: [dedicated, shared]}
+          mgmt: {type: list, elements: str, required: true}
+          compute: {type: list, elements: str}
+      netplan: {type: dict, description: Raw netplan instead of nics (with hpe_vm).}
+      hpe_vm:
+        type: dict
+        options:
+          mgmt_interface: {type: str, required: true}
+          compute_interface: {type: str}
+      storage: {type: dict, description: Raw autoinstall storage instead of boot_disk.}
+      bmc:
+        type: dict
+        options:
+          address: {type: str, required: true}
+          username: {type: str, required: true}
+          password: {type: str, required: true, no_log: true}
+          validate_certs: {type: bool}
+          bios_setup: {type: bool}

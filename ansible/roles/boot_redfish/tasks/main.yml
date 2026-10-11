@@ -13,8 +13,8 @@
   vars:
     hosted_iso_file: "{{ host_iso_url }}"
     srv_ip: "{{ bmc.address }}"
-    srv_username: "{{ bmc_username }}"
-    srv_password: "{{ bmc_password }}"
+    srv_username: "{{ bmc.username }}"
+    srv_password: "{{ bmc.password }}"
     srv_validate_certs: "{{ bmc.validate_certs | default(false) }}"
     eject_virtual_media: true
     insert_virtual_media: true

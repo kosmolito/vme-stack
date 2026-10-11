@@ -25,13 +25,13 @@ autoinstall:
   # Raw netplan from the site file (edge cases), verbatim.
   network: {{ netplan | to_json }}
 {% else %}
-  # Two NIC layouts (nics.layout), members always matched by MAC:
+  # Two NIC layouts (host_nic_layout), members always matched by MAC:
   #   dedicated: bond0 = mgmt (IP on bond0.<mgmt_vlan>, or bond0 if vlan 0),
   #              bond1 = compute, no IP (hpe-vm: -m bond0.<vlan> -c bond1)
   #   shared:    bond0 carries everything; IP untagged on bond0, the switch
   #              native VLAN must be the mgmt VLAN (hpe-vm: -m bond0)
   # Bond defaults mirror the official TUI procedure (active-backup).
-{% set tagged = nics.layout == 'dedicated' and mgmt_vlan | default(0) | int > 0 %}
+{% set tagged = host_nic_layout == 'dedicated' and mgmt_vlan | default(0) | int > 0 %}
 {% macro l3() %}
         addresses: ["{{ ip }}/{{ prefix }}"]
         routes:
@@ -50,7 +50,7 @@ autoinstall:
           macaddress: "{{ mac }}"
         set-name: mgmt{{ loop.index0 }}
 {% endfor %}
-{% if nics.layout == 'dedicated' %}
+{% if host_nic_layout == 'dedicated' %}
 {% for mac in nics.compute %}
       cmpt{{ loop.index0 }}:
         match:
@@ -67,7 +67,7 @@ autoinstall:
 {% if not tagged %}
 {{ l3() }}
 {%- endif %}
-{% if nics.layout == 'dedicated' %}
+{% if host_nic_layout == 'dedicated' %}
       bond1:
         interfaces: [{% for mac in nics.compute %}cmpt{{ loop.index0 }}{{ ', ' if not loop.last }}{% endfor %}]
         parameters:

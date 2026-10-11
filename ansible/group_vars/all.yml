@@ -1,6 +1,91 @@
-# Tuning defaults for every site. Site data comes from the site file (-i ../sites/<site>/site.yml).
+# What the roles read, derived from the site inventory (sites/example/site.yml).
+# Only names a site never sets are defined here: a site's own values must not be
+# overridden (these group_vars take precedence over the inventory's group vars).
+# Defaults of optional site settings are applied here.
 
-# Install timeouts
-wait_ssh_timeout: 2700     # 45 min
-force_reinstall: false
-keep_host_iso: false       # delete the per-host ISO once the host is installed
+# Tuning, overridable in the site or with -e (wait_ssh_timeout, force_reinstall, keep_host_iso)
+install_wait_timeout: "{{ wait_ssh_timeout | default(2700) }}"    # 45 min
+install_force: "{{ force_reinstall | default(false) | bool }}"
+install_keep_iso: "{{ keep_host_iso | default(false) | bool }}"   # keep the per-host ISO once the host is installed
+
+# The deploy server: builds and serves the media; DNS/NTP/SSH probes run from it
+deploy_host: "{{ groups['deploy_server'][0] }}"
+probe_from: "{{ deploy_host }}"
+hvm_src_iso: "{{ media.hvm_iso }}"
+seed_mode: "{{ media.seed_mode | default('embedded') }}"
+media_www_root: "{{ media.www_root | default('/srv/vme-stack/www') }}"
+media_work_dir: "{{ media.work_dir | default('/srv/vme-stack/work') }}"
+media_port: "{{ media.port | default(8080) }}"
+media_url: "{{ media.url | default('http://' ~ hostvars[deploy_host].ansible_host ~ ':' ~ media_port) }}"
+
+# The mgmt network
+domain: "{{ network.domain }}"
+gateway: "{{ network.gateway }}"
+prefix: "{{ network.prefix }}"
+mgmt_vlan: "{{ network.mgmt_vlan | default(0) }}"
+dns: "{{ network.dns }}"
+ntp_servers: "{{ network.ntp }}"
+timezone: "{{ network.timezone | default('UTC') }}"
+bond_mode: "{{ network.bond_mode | default('active-backup') }}"
+proxy: "{{ network.proxy | default('') }}"
+
+# SSH through a jump host (ssh_jump), logged in with the deploy server's key
+ansible_ssh_common_args: >-
+  {{ ('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=6'
+      ~ ' -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30'
+      ~ ' -i ' ~ hostvars[groups['deploy_server'][0]].ansible_ssh_private_key_file
+      ~ ' -o IdentitiesOnly=yes -W %h:%p ' ~ ssh_jump ~ '"') if ssh_jump is defined else '' }}
+
+# The VME Manager VM: vme_manager without its secrets (roles read those from
+# vme_manager directly, so using e.g. manager.ip never needs the vault) and with
+# defaults; its host is the one member of group vme_manager.
+manager: >-
+  {%- if vme_manager is defined -%}
+  {%-   set p = network.prefix | int -%}
+  {%-   set mask = [] -%}
+  {%-   for i in range(4) -%}
+  {%-     set bits = [[p - 8 * i, 0] | max, 8] | min -%}
+  {{-     mask.append(256 - 2 ** (8 - bits) if bits else 0) -}}
+  {%-   endfor -%}
+  {%-   set admin = vme_manager.admin_user | default('vmeadmin') -%}
+  {{ {'host': groups['vme_manager'] | default([]) | first | default(''),
+      'ip': vme_manager.ip, 'hostname': vme_manager.hostname,
+      'url': vme_manager.url | default('https://' ~ vme_manager.ip),
+      'size': vme_manager.size | default('S'), 'admin_user': admin,
+      'tenant': vme_manager.tenant | default(site),
+      'email': vme_manager.email | default(admin ~ '@' ~ network.domain),
+      'datastore': vme_manager.datastore | default(''),
+      'autostart': vme_manager.autostart | default(false),
+      'netmask': mask | join('.'), 'gateway': network.gateway, 'dns': network.dns,
+      'compute_vlans': network.compute_vlans | default([]), 'vme_iso': media.vme_iso | default('')} }}
+  {%- else -%}{{ {} }}{%- endif -%}
+
+# Manager objects: groups by name, clouds with defaults, clusters with their group
+manager_groups: "{{ vme_groups | default([]) | map(attribute='name') | list }}"
+manager_clouds: >-
+  {%- set out = [] -%}
+  {%- for c in vme_clouds | default([]) -%}
+  {%-   set cloud = {'name': c.name, 'type': c.type, 'groups': c.groups} -%}
+  {%-   if c.type == 'vmware' -%}
+  {%-     set cloud = cloud | combine({'vcenter': {'url': c.vcenter.url, 'datacenter': c.vcenter.datacenter,
+                                                    'cluster': c.vcenter.cluster | default(''),
+                                                    'import_existing': c.vcenter.import_existing | default(true)}}) -%}
+  {%-   endif -%}
+  {{-   out.append(cloud) -}}
+  {%- endfor -%}
+  {{ out }}
+# vCenter logins by cloud name, kept out of manager_clouds (loop items get printed)
+vme_vcenter_logins: >-
+  {{ vme_clouds | default([]) | selectattr('type', 'equalto', 'vmware')
+     | items2dict(key_name='name', value_name='vcenter') }}
+manager_clusters: >-
+  {%- set out = [] -%}
+  {%- for c in vme_clusters | default([]) -%}
+  {%-   set cloud = vme_clouds | default([]) | selectattr('name', 'equalto', c.cloud) | first | default({}) -%}
+  {{-   out.append({'name': c.name, 'cloud': c.cloud,
+                    'group': c.group | default((cloud.groups | default([''])) | first),
+                    'hosts': c.hosts, 'layout': c.layout | default(''),
+                    'compute_vlans': network.compute_vlans | default([]),
+                    'datastores': c.datastores | default([])}) -}}
+  {%- endfor -%}
+  {{ out }}

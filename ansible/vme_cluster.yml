@@ -10,4 +10,4 @@
   gather_facts: false
   roles:
     - role: vme_cluster
-      when: vme_groups | length > 0 or vme_clouds | length > 0 or vme_clusters | length > 0
+      when: manager_groups | length > 0 or manager_clouds | length > 0 or manager_clusters | length > 0

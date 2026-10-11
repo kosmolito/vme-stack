@@ -1,68 +1,77 @@
 # Scenario: HVM hosts are VMs (VMware, Proxmox, Hyper-V, ...), e.g. a lab or a PoC.
 # The pipeline does not create or boot VMs (platform: manual): you create them, and
 # attach + boot the ISO URL the pipeline prints for each host. Steps: README.md.
+# The site file is a plain Ansible inventory; every setting: sites/example/site.yml.
 # Secrets: group_vars/all/vault.yml (template: vault.example.yml, not loaded).
-site: poc
-version: 1
+all:
+  vars:
+    site: poc
 
-media:                                # on the deploy server
-  hvm_iso: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso
-  vme_iso: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso
+    media:                            # on the deploy server
+      hvm_iso: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso
+      vme_iso: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso
 
-network:
-  domain: poc.example.com
-  gateway: 192.168.50.1
-  prefix: 24
-  mgmt_vlan: 0                        # untagged: the mgmt vNIC sits in the mgmt VLAN's port group
-  compute_vlans: [51, 52]             # VM networks, tagged by the cluster on the compute bridge
-  dns: [192.168.50.10]
-  ntp: [pool.ntp.org]
-  timezone: Europe/Stockholm
+    network:
+      domain: poc.example.com
+      gateway: 192.168.50.1
+      prefix: 24
+      mgmt_vlan: 0                    # untagged: the mgmt vNIC sits in the mgmt VLAN's port group
+      compute_vlans: [51, 52]         # VM networks, tagged by the cluster on the compute bridge
+      dns: [192.168.50.10]
+      ntp: [pool.ntp.org]
+      timezone: Europe/Stockholm
 
-deploy_server:                        # any Ubuntu/Debian or RHEL-family VM on the mgmt network
-  address: 192.168.50.5
-  user: deploy                        # an existing login with passwordless sudo
-  ssh_private_key: keys/vme-stack     # its private key, on the controller (relative to this file)
+    vme_manager:                      # runs on the host in group vme_manager (below)
+      ip: 192.168.50.20
+      hostname: vme-manager
+      size: S                         # S = 12 GB / 2 vCPU: give hvm01 at least 32 GB
+      admin_password: "{{ vault_vme_admin }}"
+      datastore: nfs01                # move the Manager's disk to NFS once the cluster exists
+      ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # the Manager's key to the cluster hosts
+      ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"
 
-vme_manager:
-  host: hvm01
-  ip: 192.168.50.20
-  hostname: vme-manager
-  size: S                             # S = 12 GB / 2 vCPU: give hvm01 at least 32 GB
-  admin_password: "{{ vault_vme_admin }}"
-  datastore: nfs01                    # move the Manager's disk to NFS once the cluster exists
-  ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # the Manager's key to the cluster hosts
-  ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"
+    vme_groups:
+      - name: poc
 
-vme_groups:
-  - name: poc
+    vme_clouds:
+      - {name: poc-hvm, type: hvm, groups: [poc]}
 
-vme_clouds:
-  - { name: poc-hvm, type: hvm, groups: [poc] }
+    vme_clusters:
+      - name: poc-hvm01
+        cloud: poc-hvm
+        hosts: [hvm01, hvm02, hvm03]
+        datastores:
+          - {name: nfs01, type: nfs, host: 192.168.50.6, path: /export/vme, default: true}
 
-vme_clusters:
-  - name: poc-hvm01
-    cloud: poc-hvm
-    hosts: [hvm01, hvm02, hvm03]
-    datastores:
-      - { name: nfs01, type: nfs, host: 192.168.50.6, path: /export/vme, default: true }
+  children:
+    deploy_server:                    # any Ubuntu/Debian or RHEL-family VM on the mgmt network
+      hosts:
+        deploy:
+          ansible_host: 192.168.50.5
+          ansible_user: deploy        # an existing login with passwordless sudo
+          ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/vme-stack"   # its key, in the site directory
 
-defaults:
-  platform: manual
-  hvm_admin_password: "{{ vault_hvm_admin_password }}"   # the Manager logs in with it to build the cluster
-  hvm_ssh_private_key: keys/vme-stack   # the hosts' login (here the same key); its public key is installed
-  nic_layout: dedicated
+    # One vNIC for mgmt, one for compute; each becomes a bond with one member (bond0,
+    # bond1). Fixed MACs. mgmt vNIC: port group / bridge of the mgmt VLAN (access, the
+    # guest does not tag). compute vNIC: trunk carrying the compute_vlans tagged.
+    hvm:
+      vars:
+        platform: manual
+        ansible_user: hvmadmin        # the hosts' admin user, created by the install
+        ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/vme-stack"   # here the same key; its public key is installed
+        hvm_admin_password: "{{ vault_hvm_admin_password }}"   # the Manager logs in with it to build the cluster
+        nic_layout: dedicated
+      hosts:
+        hvm01:
+          ansible_host: 192.168.50.21
+          nics: {mgmt: ["00:50:56:00:50:21"], compute: ["00:50:56:00:51:21"]}
+        hvm02:
+          ansible_host: 192.168.50.22
+          nics: {mgmt: ["00:50:56:00:50:22"], compute: ["00:50:56:00:51:22"]}
+        hvm03:
+          ansible_host: 192.168.50.23
+          nics: {mgmt: ["00:50:56:00:50:23"], compute: ["00:50:56:00:51:23"]}
 
-# One vNIC for mgmt, one for compute; each becomes a bond with one member (bond0,
-# bond1). Fixed MACs. mgmt vNIC: port group / bridge of the mgmt VLAN (access, the
-# guest does not tag). compute vNIC: trunk carrying the compute_vlans tagged.
-hosts:
-  - name: hvm01
-    ip: 192.168.50.21
-    nics: { mgmt: ["00:50:56:00:50:21"], compute: ["00:50:56:00:51:21"] }
-  - name: hvm02
-    ip: 192.168.50.22
-    nics: { mgmt: ["00:50:56:00:50:22"], compute: ["00:50:56:00:51:22"] }
-  - name: hvm03
-    ip: 192.168.50.23
-    nics: { mgmt: ["00:50:56:00:50:23"], compute: ["00:50:56:00:51:23"] }
+    vme_manager:                      # the host that runs the Manager VM
+      hosts:
+        hvm01:

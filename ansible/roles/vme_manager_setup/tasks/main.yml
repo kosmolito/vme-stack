@@ -6,7 +6,7 @@
 # API calls go from probe_from (the deploy server reaches the Manager).
 - name: Ask the Manager whether setup is needed
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/api/setup/check"
+    url: "https://{{ manager.ip }}/api/setup/check"
     validate_certs: false
     return_content: true
   delegate_to: "{{ probe_from }}"
@@ -15,26 +15,26 @@
 - name: Run first-time setup
   when: vme_setup_check.json.setupNeeded | default(false) | bool
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/api/setup/init"
+    url: "https://{{ manager.ip }}/api/setup/init"
     method: POST
     validate_certs: false
     body_format: json
-    body: "{{ setup_body | combine({'licenseKey': vme_manager.license_key}
-                                   if vme_manager.license_key else {}) }}"
+    body: "{{ setup_body | combine({'licenseKey': vme_manager.license_key | default('')}
+                                   if vme_manager.license_key | default('') else {}) }}"
     timeout: 120
     return_content: true
   vars:
     vme_admin_password: "{{ vme_manager.admin_password }}"
     setup_body:
-      accountName: "{{ vme_manager.tenant }}"
-      username: "{{ vme_manager.admin_user }}"
+      accountName: "{{ manager.tenant }}"
+      username: "{{ manager.admin_user }}"
       password: "{{ vme_admin_password }}"
       confirmPassword: "{{ vme_admin_password }}"
-      email: "{{ vme_manager.email }}"
+      email: "{{ manager.email }}"
       firstName: VME
       lastName: Admin
-      applianceName: "{{ vme_manager.hostname }}"
-      applianceUrl: "{{ vme_manager.url }}"
+      applianceName: "{{ manager.hostname }}"
+      applianceUrl: "{{ manager.url }}"
       backups: "off"
       monitoring: "on"
       logs: "on"
@@ -50,14 +50,14 @@
     fail_msg: "Setup failed: HTTP {{ vme_setup.status | default('?') }} {{ vme_setup.json.msg | default(vme_setup.msg | default('')) }}"
     quiet: true
 
-- name: "Log in with the OAuth password grant (as the CLI does): {{ vme_manager.admin_user }}"
+- name: "Log in with the OAuth password grant (as the CLI does): {{ manager.admin_user }}"
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
+    url: "https://{{ manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
     method: POST
     validate_certs: false
     body_format: form-urlencoded
     body:
-      username: "{{ vme_manager.admin_user }}"
+      username: "{{ manager.admin_user }}"
       password: "{{ vme_manager.admin_password }}"
     return_content: true
   delegate_to: "{{ probe_from }}"
@@ -66,7 +66,7 @@
 
 - name: Read the license status
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/api/license"
+    url: "https://{{ manager.ip }}/api/license"
     validate_certs: false
     headers:
       Authorization: "Bearer {{ vme_login.json.access_token }}"
@@ -80,6 +80,6 @@
     license_fields: [licenseType, productTier, startDate, endDate, maxInstances, maxMemory, maxStorage, hardLimit]
   ansible.builtin.debug:
     msg:
-      - "Manager {{ vme_manager.url }}: {{ 'set up now' if vme_setup is not skipped else 'already set up' }}, login as {{ vme_manager.admin_user }} works"
+      - "Manager {{ manager.url }}: {{ 'set up now' if vme_setup is not skipped else 'already set up' }}, login as {{ manager.admin_user }} works"
       - "License: {{ vme_license.json.license | default({}) | dict2items | selectattr('key', 'in', license_fields) | items2dict
                      | default('none (trial / unlicensed)', true) }}"

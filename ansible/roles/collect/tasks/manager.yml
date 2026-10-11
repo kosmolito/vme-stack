@@ -4,12 +4,12 @@
 # object vme-stack creates, with status. JSON as the API returns it.
 - name: Log in to the Manager
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
+    url: "https://{{ manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
     method: POST
     validate_certs: false
     body_format: form-urlencoded
     body:
-      username: "{{ vme_manager.admin_user }}"
+      username: "{{ manager.admin_user }}"
       password: "{{ vme_manager.admin_password }}"
   delegate_to: "{{ probe_from }}"
   register: collect_login
@@ -27,7 +27,7 @@
 
 - name: Read from the Manager API
   ansible.builtin.uri:
-    url: "https://{{ vme_manager.ip }}/api/{{ item.path }}"
+    url: "https://{{ manager.ip }}/api/{{ item.path }}"
     validate_certs: false
     headers:
       Authorization: "Bearer {{ collect_login.json.access_token }}"

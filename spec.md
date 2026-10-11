@@ -72,9 +72,9 @@ vme-stack/
     vme_cluster.yml          # groups, clouds (HVM, vCenter), clusters, datastores, Manager VM on shared storage
     group_vars/all.yml       # tuning defaults (timeouts, force_reinstall)
     plugins/
-      inventory/vme_site.py  # site.yml as inventory + schema check
-      filter/vme_site.py     # cross-field site rules (preflight)
-    schemas/site.schema.json
+      filter/vme_site.py     # site rules: formats, references (preflight)
+    group_vars/              # derived values for the roles (never names a site sets)
+    validate.yml             # the site inventory only, contacts nothing
     roles/
       preflight/  host_state/  seed/  media_server/  media/
       boot_manual/  boot_redfish/  baremetal_lifecycle/   # boot drivers (+ vendored Redfish role)
@@ -90,70 +90,52 @@ vme-stack/
 
 ## Customer input file (site.yml)
 
-One `site.yml` per site is the only thing that changes between customers. Secrets are never written in it: a secret field holds a quoted template naming a vault variable (`"{{ vault_x }}"`), resolved only when used; everything else is literal. It is loaded as Ansible **inventory** (`-i site.yml`) by the `vme_site` inventory plugin, so `--limit <host>` works. Schema: `ansible/schemas/site.schema.json` (JSON Schema 2020-12). Bare-metal example: `ansible/examples/baremetal/site.yml`.
+One site file per site is the only thing that changes between customers. It is a plain **Ansible inventory** (YAML, any name): `all.vars` holds the site-wide settings (`site`, `media`, `network`, `ssh_jump`, `vme_manager`, `vme_groups`, `vme_clouds`, `vme_clusters`); group `deploy_server` has the one deploy server, group `hvm` the HVM hosts with their defaults as group vars, group `vme_manager` the one host that runs the Manager VM. Connections use Ansible's own variables (`ansible_host` = the host's static IP, `ansible_user` = the admin user the install creates, `ansible_ssh_private_key_file`). Secrets are Ansible values, best vault references (`"{{ vault_x }}"`). Every setting with comments: `sites/example/site.yml`; types, required, allowed values: `ansible/roles/preflight/meta/argument_specs.yml`.
 
 ```yaml
-site: acme-prod
-version: 1                       # schema version
-
-media:
-  hvm_iso: /srv/vme-stack/src/HVM_Install_24.04_S5Q83-11056.iso   # on the deploy server
-  seed_mode: embedded            # embedded (implemented) | http
-
-network:                         # one mgmt network shared by all hosts
-  domain: acme.local
-  gateway: 10.0.0.1
-  prefix: 24
-  mgmt_vlan: 100                 # 0 = untagged
-  dns: [10.0.0.10, 10.0.0.11]
-  ntp: [10.0.0.10]
-  timezone: Europe/Stockholm
-  proxy: http://proxy.acme.local:3128   # optional
-  bond_mode: active-backup       # active-backup | 802.3ad
-
-deploy_server:                   # builds + serves the ISOs; probes run here; the EE usually runs here too
-  name: deploy                   # inventory name (default)
-  address: 10.0.0.5
-  user: deploy                   # passwordless sudo
-  ssh_private_key: keys/deploy_server   # controller side; relative = relative to site.yml
-  jump: admin@10.0.0.4           # optional SSH jump host to reach the deploy server and hosts
-  port: 8080                     # nginx; media URL = http://address:port unless media_url is set
-  www_root: /srv/vme-stack/www   # default
-  work_dir: /srv/vme-stack/work  # default
-
-defaults:                        # any host may override platform, hvm_admin_*, hvm_ssh_*, boot_disk
-  platform: redfish              # redfish | manual
-  hvm_admin_user: hvmadmin
-  hvm_admin_password: "{{ vault_hvm_admin_password }}"   # secret: a vault reference
-  hvm_ssh_private_key: keys/hvm_hosts   # controller side; its public key is installed for hvm_admin_user
-  boot_disk: auto                # auto (smallest disk) | installer match keys, e.g. { serial: "*S3EVNX0K*" }
-  nic_layout: dedicated          # dedicated | shared
-  os_updates: true
-
-hosts:
-  - name: hvm01
-    ip: 10.0.0.21
-    bmc: { address: 10.0.1.11, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}" }   # bios_setup: true to opt in
-    nics:
-      mgmt: ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"]
-      compute: ["aa:bb:cc:dd:ee:03", "aa:bb:cc:dd:ee:04"]
-  - name: hvm09                  # e.g. a VM, or a server without a driver
-    platform: manual
-    ip: 10.0.0.41
-    nics: { layout: shared, mgmt: ["52:54:00:71:00:01", "52:54:00:71:00:02"] }
-  - name: hvm10                  # edge case: raw netplan + raw storage, used verbatim
-    ip: 10.0.0.42
-    netplan: { version: 2, ethernets: {...}, bonds: {...}, vlans: {...} }   # instead of nics
-    hpe_vm: { mgmt_interface: bond0.100, compute_interface: bond1 }       # required with netplan
-    storage: { layout: { name: lvm, match: { serial: "*S3EVNX0K*" } } } # instead of boot_disk
+all:
+  vars:
+    site: acme-prod
+    media: {hvm_iso: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso, vme_iso: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso}
+    network: {domain: acme.local, gateway: 10.0.0.1, prefix: 24, mgmt_vlan: 100, dns: [10.0.0.10], ntp: [10.0.0.10], compute_vlans: [200]}
+    vme_manager: {ip: 10.0.0.30, hostname: vme-manager, admin_password: "{{ vault_vme_admin }}", ...}
+    vme_groups: [...]
+    vme_clouds: [...]
+    vme_clusters: [...]
+  children:
+    deploy_server:
+      hosts:
+        deploy: {ansible_host: 10.0.0.5, ansible_user: deploy, ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy_server"}
+    hvm:
+      vars:
+        platform: redfish                # redfish | manual
+        ansible_user: hvmadmin
+        ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/hvm_hosts"   # its public key is installed
+        hvm_admin_password: "{{ vault_hvm_admin_password }}"
+      hosts:
+        hvm01:
+          ansible_host: 10.0.0.21
+          bmc: {address: 10.0.1.11, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}"}
+          nics: {mgmt: ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"], compute: ["aa:bb:cc:dd:ee:03", "aa:bb:cc:dd:ee:04"]}
+        hvm09: {ansible_host: 10.0.0.41, platform: manual, nics: {layout: shared, mgmt: ["52:54:00:71:00:01"]}}
+        hvm10:                           # edge case: raw netplan + raw storage, used verbatim
+          ansible_host: 10.0.0.42
+          netplan: {version: 2, ethernets: {...}, bonds: {...}, vlans: {...}}
+          hpe_vm: {mgmt_interface: bond0.100, compute_interface: bond1}
+          storage: {layout: {name: lvm, match: {serial: "*S3EVNX0K*"}}}
+    vme_manager:
+      hosts:
+        hvm01:
 ```
 
-**Validation, in two steps**
+**Validation** (preflight first, also alone with `validate.yml`, which contacts nothing), over the whole site even with `--limit`, every problem of a step listed at once:
 
-1. *Schema* (inventory plugin, before any play): shapes, formats (IP, MAC, FQDN, host label, SSH key), enums, unknown keys rejected. Every error is listed at once and the run stops (`any_unparsed_is_failed`). Host names must be unique (the plugin needs that to build the inventory).
-2. *Site rules* (preflight, over the whole file even with `--limit`): unique IPs and MACs (raw netplan: from `ethernets.*.match.macaddress`); raw netplan: `hpe_vm.mgmt_interface` defined, static (no DHCP), not a bridge, carries the host's `ip`, and `compute_interface` defined and not the parent of the mgmt VLAN; not both `boot_disk` and `storage`; host IPs not the gateway or the deploy server; IPs and gateway usable inside `gateway/prefix`; the platform has a driver role (`boot_<platform>`); `bmc` required for `redfish_*` and refused for `manual`; NIC layout rules (dedicated needs compute MACs, shared forbids them); `seed_mode` implemented.
+1. *Shape*: groups `hvm` and `deploy_server` have hosts, `site`/`network`/`media` are set (else: not a vme-stack site inventory).
+2. *Secrets*: every secret field resolves (vault loaded, variable present); only names are shown.
+3. *Variables*: `validate_argument_spec` against `roles/preflight/meta/argument_specs.yml` (entry points `site_settings` for all.vars, `hvm_host` per host): types, required, allowed values, unknown keys of the known dicts.
+4. *Site rules* (`plugins/filter/vme_site.py` over a view of the inventory): formats (IPv4, MAC, host label, user, SSH key, paths, URLs, boot_disk), unique IPs and MACs (raw netplan: from `ethernets.*.match.macaddress`), IPs inside `gateway/prefix` and not the gateway or the deploy server, nics or netplan + hpe_vm, raw netplan checks for HPE's cluster join, NIC layout rules, a driver per platform, `bmc` for redfish only, exactly one deploy server and one Manager host (an HVM host), Manager objects referencing each other, one admin user and password per cluster.
 
-Preflight then checks the environment (raw netplan parsed by netplan's own parser, `python3-netplan` on the deploy server; controller SSH key exists and is private; deploy server: passwordless sudo, apt, python3, stock ISO, free space for one ISO per targeted host; DNS answers from the deploy server) and lists every problem at once. NTP problems only warn.
+Preflight then checks the environment (raw netplan parsed by netplan's own parser, `python3-netplan` on the deploy server; controller SSH keys exist and are private; deploy server: passwordless sudo, apt/dnf, python3, the ISOs, free space for one ISO per targeted host; DNS answers from the deploy server) and lists every problem at once. NTP problems only warn.
 
 **Flow per host**: `host_state` (installed? IP taken?) -> `seed` (render; hash = ISO name + cloud-init instance-id) -> `media` (xorriso on the deploy server, published at `<media_url>/isos/vme-stack-<host>-<hash>.iso`, URL also written to `build/<host>/iso_url`) -> `boot_<platform>` -> `wait_ssh` (on reinstall first waits for the old system to go down; after login, the instance-id must match this run's seed) -> `postinstall` (deletes the ISO from the media server). `media.yml` stops after `media`, for flows where something else boots the host (lab: `media.yml` -> `terraform apply` -> `hvm_hosts.yml`).
 
@@ -351,3 +333,4 @@ Build in this order; each milestone is usable on its own.
 - **SSH keys per login (decided 2026-10-11, user choices)**: `access.ssh_private_key` was one key for the deploy server, the jump host and the HVM hosts, and `defaults.ssh_keys` (public keys for the hosts, one had to match) did not say what it pairs with. Two logins now, each with its key next to it: `deploy_server.user` + `deploy_server.ssh_private_key` (an existing account on a server that usually belongs to the customer) and `hvm_admin_user` + `defaults.hvm_ssh_private_key` (per host possible; set up by the install); both may name the same file. `access.jump` -> `deploy_server.jump`, logging in with the deploy server's key (a separate jump key only if a site needs it). `ssh_keys` -> `hvm_ssh_keys`, extra keys only: preflight derives the public key of `hvm_ssh_private_key` on the controller (`ssh-keygen -y`, or `<key>.pub` for a key with a passphrase; present in the EE through openssh) and the seed installs it plus `hvm_ssh_keys`, so the login key always matches. Preflight checks every key file in use (exists, mode). `access` removed; old keys fail the schema with the new form. `deploy_server.connection: local` stays for Ansible installed on the deploy server; from the EE container always `ssh`, also on the deploy server itself (`local` would act inside the container). Examples use `user: deploy` and `keys/deploy_server`, `keys/hvm_hosts` (one file `keys/vme-stack` in the VM example).
 - **Run logs and support bundle (decided 2026-10-11, user choices)**: users need to hand over what went wrong without the maintainer on site. (1) Run log always: every command in the EE goes through `tools/vme_stack_run.py` (in the code dir, so the hotfix mount covers it; an old hotfix dir without it falls back to the image's), which sets `ANSIBLE_LOG_PATH` to `<log dir>/<date>-<time>-<playbook>.log`; log dir `VME_STACK_LOG_DIR`, set by the entrypoint to `/logs` when mounted and writable, else `build/logs` (lost with the container; the run says so). Other commands pass through unchanged. (2) `VME_STACK_DEBUG=1` (user's name for the switch): `ANSIBLE_VERBOSITY=3`, then `collect.yml` with the run's inventory, limit, extra vars and vault options, also after a failure; `--ask-vault-pass` is asked once by the runner and handed to both runs through a 0600 file in `/dev/shm`, removed at the end; exit code = the run's. (3) `collect.yml` / role `collect`: read-only bash scripts on the deploy server and each HVM host (each item may fail; one tarball fetched per machine), the Manager through its API from `probe_from` (ping/version, appliance settings, license, health, `health/logs` = the appliance's own logs, alarms, groups, clouds, clusters, servers, instances, processes; all present on 9.0.2), and the controller's view (versions, site file, inventory as resolved without secrets, rendered seeds, the run log). `COLLECTED.txt` says which machines answered. (4) Secrets: `finish_bundle.py` (Python only: the EE has no `tar`) replaces every string of the site's vault file and every resolved secret field (literals too; multi-line keys also line by line; values shorter than 4 characters skipped) and crypt password hashes by `********` in all text files, drops binary files, writes `REDACTED.txt` (counts per file, no values), packs `<log dir>/vme-stack-support-<site>-<date>.tar.gz`. Nothing is uploaded. Found on the lab: HPE's `hpe-vm --install` log holds the Manager password in clear text, and the Manager's clouds API answer a vault value; both were replaced. Verified on the lab (natively and in an EE built from the 0.1.2 image plus the new code): success and failure runs (exit code kept, bundle written), `--ask-vault-pass` asked once through a pty, no `/logs` mount note; an independent check found none of the vault's values in the bundles. Machines report 0 changes. Bundle ~0.7 MB for the lab (4 machines + Manager).
 - **ansible-navigator, free site file name, keys in the site directory (decided 2026-10-11, user choices)**: `docker run` with mounts, image tag, vault options and `-e` per run was hard to use and to troubleshoot. Compared with an own wrapper script, ansible-navigator won (Ansible-native, Red Hat's tool for EEs, run records and replay; the spec's original plan): `sites/example/ansible-navigator.yml` per site directory sets image, pull policy missing, mounts `.` -> `/site` (ro), `./logs` -> `/logs`, `./build` -> the code's `build/` (seeds and ISO URLs persist, e.g. for Terraform), inventory `/site/site.yml`, `--vault-password-file /site/.vault_pass`, passes `VME_STACK_DEBUG`, stdout mode, run records in `logs/`. Verified with the 0.1.3 image: playbooks baked into the image run by name (the entrypoint changes into the code dir), relative paths in the settings work, our run log and the support bundle work through navigator. Limits found: navigator cannot prompt (`--ask-vault-pass`) while it records the run (it hangs; works with `--pae false`), hence `.vault_pass`; `logs/` and `build/` must exist before a run; navigator needs Python on the client (`pip install ansible-navigator`, which brings ansible-core and so `ansible-vault`). No `--network host`: the pipeline only makes outgoing connections. Plain `docker run` stays documented. The release script keeps the image tag in the settings template current. Site file: the inventory plugin claims any `.yml`/`.yaml` (it is the only enabled plugin) and recognises a site file by its top-level `site` and `version`; anything else fails with "not a vme-stack site file" instead of Ansible's generic parse failure. Keys: one convention, `keys/` in the site directory, paths relative to the site file, the same natively and in the container (only the site directory is mounted); schema texts and preflight's "key not found" say so.
+- **Native Ansible inventory, validation per variable (decided 2026-10-11, user choices)**: the custom inventory plugin and the JSON schema are gone; the site file is a plain Ansible YAML inventory (any name): `all.vars` for the site-wide settings, group `deploy_server` (exactly one host), group `hvm` (defaults as group vars, overrides as host vars), group `vme_manager` (exactly one HVM host; was `vme_manager.host`). Connections use Ansible's own `ansible_host` (the static IP), `ansible_user` (the admin user the install creates), `ansible_ssh_private_key_file` (`"{{ inventory_dir }}/keys/..."`); `ssh_jump` for a jump host. Why: Ansible-native (standard inventory tools, `--limit`, group/host vars, vault templates trusted by Ansible itself, AWX/AAP inventory sources). `ansible/group_vars/` derives what the roles read (`ip`, `admin_user`, `mgmt_interface`, `manager`, `media_url`, ...) as templates: these group_vars outrank the inventory's group vars, so they define only names a site never sets, with the site's optional values defaulted inside (verified: derived values reach `hostvars` of hosts outside the play). Secrets stay out of `manager` (roles read them from `vme_manager`), so using `manager.ip` never needs the vault. Validation (user: per variable): preflight first (and `validate.yml` alone, no connection): inventory shape, secrets resolve (by field name, without resolving them twice), `validate_argument_spec` against `roles/preflight/meta/argument_specs.yml` (entry points `site_settings`, `hvm_host`; not named after a task file, else Ansible checks them itself host by host), then the site rules in the filter plugin over a view of the inventory (formats moved there from the schema; passwords only as hashes). Not detectable natively: misspelled top-level variable names (unknown keys inside the known dicts are). Tests: `check_sites.py` runs `validate.yml` per site file and per case (50 cases, parallel, dummy vault values), so it tests what preflight runs. Lab Terraform reads the inventory shape; lab playbooks load `ansible/group_vars/all.yml` (jump) explicitly. Verified in the lab: rebuilt from scratch with lab Terraform (deploy server and three hosts), bootstrap and NFS through the jump host, `deploy.yml` from empty hosts to Manager 9.0.2 and two clusters (2 hosts with the NFS datastore online and the Manager disk moved; 1 host) plus the vCenter cloud with import; re-run 0 changes in 2 min 11 s. (First attempt: the HVM VMs had been created before their ISOs existed and sat in UEFI "no bootable device"; a reset fixed it; the lab order is media first, then terraform apply.) Found on the way: `media_server` misread the deploy server's state where systemctl prints nothing.

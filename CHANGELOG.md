@@ -9,6 +9,28 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **Site file change: the site file is a plain Ansible inventory.** No custom
+  inventory plugin and no JSON schema any more. `all.vars` holds the site-wide
+  settings (`site`, `media`, `network`, `ssh_jump`, `vme_manager`, `vme_groups`,
+  `vme_clouds`, `vme_clusters`); group `deploy_server` the deploy server, group
+  `hvm` the HVM hosts (their defaults as group vars, overrides as host vars), group
+  `vme_manager` the host that runs the Manager VM (was `vme_manager.host`).
+  Connections use Ansible's own variables: `ansible_host` (the host's static IP;
+  was `ip`, deploy server `address`), `ansible_user` (was `hvm_admin_user`,
+  deploy server `user`), `ansible_ssh_private_key_file` (was
+  `hvm_ssh_private_key`/`ssh_private_key`, now `"{{ inventory_dir }}/keys/..."`);
+  `ssh_jump` (was `deploy_server.jump`); `media.www_root`/`work_dir`/`port`/`url`
+  (were `deploy_server.*`). Convert old site files after `sites/example/site.yml`;
+  an old file fails with "not a vme-stack site inventory".
+- **Validation per variable**: preflight (and `validate.yml`, which contacts no
+  machine) checks that secrets resolve, every variable against
+  `roles/preflight/meta/argument_specs.yml` (types, required, allowed values,
+  unknown keys of known dicts), then the site rules (formats, unique IPs/MACs,
+  references, one deploy server and one Manager host); every problem of a step at
+  once, over the whole site even with `--limit`.
+- Fix: `media_server` read the deploy server's state wrongly where `systemctl`
+  prints nothing (e.g. without systemd).
+
 - **Run with ansible-navigator** from the site directory:
   `cd sites/acme && ansible-navigator run deploy.yml`. `sites/example/ansible-navigator.yml`
   sets the image, mounts the site directory (`/site`), `logs/` and `build/` (seeds

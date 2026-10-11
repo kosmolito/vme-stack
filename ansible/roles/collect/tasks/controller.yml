@@ -5,7 +5,7 @@
   ansible.builtin.set_fact:
     bundle_dir: >-
       {{ lookup('ansible.builtin.env', 'VME_STACK_LOG_DIR', default='') or (playbook_dir ~ '/build/logs') }}/vme-stack-support-{{
-      site.vme_site.site }}-{{ now(fmt='%Y%m%d-%H%M%S') }}
+      site.site }}-{{ now(fmt='%Y%m%d-%H%M%S') }}
   vars:
     site: "{{ hostvars[groups['hvm'][0]] }}"
 
@@ -28,15 +28,15 @@
       python: {{ ansible_playbook_python }}
       code: {{ playbook_dir }}
       collected: {{ now(utc=true).isoformat() }} UTC
-      site: {{ hostvars[groups['hvm'][0]].vme_site_file }}
+      site: {{ hostvars[groups['hvm'][0]].inventory_file }}
 
 - name: The site file
   ansible.builtin.copy:
-    src: "{{ hostvars[groups['hvm'][0]].vme_site_file }}"
+    src: "{{ hostvars[groups['hvm'][0]].inventory_file }}"
     dest: "{{ bundle_dir }}/controller/site.yml"
     mode: "0600"
 
-# Only what the plugin derived from the site file; secrets are not in this list.
+# The values the roles use, as resolved from the inventory; secrets are not in this list.
 - name: The inventory as resolved
   ansible.builtin.copy:
     dest: "{{ bundle_dir }}/controller/inventory.yml"
@@ -50,7 +50,7 @@
       {%   endfor %}
       {% endfor %}
   vars:
-    inventory_keys: [ansible_host, ansible_user, ansible_connection, ansible_ssh_private_key_file, platform, admin_user,
+    inventory_keys: [ansible_host, ansible_user, ansible_connection, ansible_ssh_private_key_file, platform, admin_user, host_nic_layout, hpe_vm,
                      ip, prefix, gateway, dns, ntp_servers, domain, mgmt_vlan, timezone, bond_mode, proxy, nics, netplan,
                      mgmt_interface, compute_interface, boot_disk, storage, bmc, hvm_ssh_keys, media_url, seed_mode,
                      hvm_src_iso, deploy_host, probe_from]

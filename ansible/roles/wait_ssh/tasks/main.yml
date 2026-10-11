@@ -11,7 +11,7 @@
     port: 22
     state: stopped
     sleep: 10
-    timeout: "{{ wait_ssh_timeout }}"
+    timeout: "{{ install_wait_timeout }}"
   delegate_to: "{{ probe_from }}"
   # Not for a running install of this ISO: it reboots into the installed system
   # on its own, and the deploy-key login below waits for that.
@@ -24,14 +24,14 @@
     search_regex: "SSH-2.0"
     delay: "{{ 120 if install_now | bool else 0 }}"
     sleep: 15
-    timeout: "{{ wait_ssh_timeout }}"
+    timeout: "{{ install_wait_timeout }}"
   delegate_to: "{{ probe_from }}"
 
 # The live installer runs its own sshd once the network is up, so a banner
 # alone does not mean the installed system is ready. Keep trying our key.
 - name: Log in with the deploy key
   ansible.builtin.wait_for_connection:
-    timeout: "{{ wait_ssh_timeout }}"
+    timeout: "{{ install_wait_timeout }}"
     sleep: 15
 
 # Written by the seed's late-commands from the installer's cloud-init instance-id.
