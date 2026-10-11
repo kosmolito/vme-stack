@@ -20,9 +20,9 @@ ansible-navigator:
     # cannot prompt while it records the run).
     cmdline: "--vault-password-file /site/.vault_pass"
   execution-environment:
-    image: ghcr.io/kosmolito/vme-stack-ee:0.1.4
+    image: ghcr.io/kosmolito/vme-stack-ee:latest   # or a version, e.g. :0.1.4, to stay on it
     pull:
-      policy: missing
+      policy: tag                       # latest: pulled again when a newer one is published
     volume-mounts:
       - {src: ".", dest: /site, options: ro}
       - {src: "./logs", dest: /logs}

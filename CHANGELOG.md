@@ -9,6 +9,12 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- `ansible-navigator.yaml` in the repository root, for working on vme-stack: runs
+  the project image (`vme-stack-ee:latest`) with the clone's own `ansible/` as its
+  code (the image's hotfix mount), so changes run in the real EE without a rebuild.
+- `sites/example/ansible-navigator.yml` uses `vme-stack-ee:latest` (pulled again
+  when a newer one is published); pin a version there to stay on it.
+
 ## [0.1.4] - 2026-10-11
 
 - **Site file change: the site file is a plain Ansible inventory** (YAML, any

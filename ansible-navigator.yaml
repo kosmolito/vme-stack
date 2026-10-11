@@ -1,0 +1,28 @@
+---
+# ansible-navigator settings for working on vme-stack itself: runs the project's
+# container image with this clone's ansible/ as its code (the image's hotfix
+# mount: a directory with code is used as it is), so changes run in the real EE
+# without rebuilding the image.
+#   cd vme-stack
+#   SITE=$(realpath <site dir>)           # absolute paths: the container's working directory is the code
+#   ansible-navigator run validate.yml -i $SITE/site.yml
+#   ansible-navigator run deploy.yml -i $SITE/site.yml --vault-password-file $SITE/.vault_pass
+#   VME_STACK_DEBUG=1 ansible-navigator run deploy.yml -i ...   # verbose + support bundle in logs/
+# Navigator mounts the inventory's directory under the same path, so the vault
+# password file and the keys in the site directory (keys/..., see sites/example)
+# are found. Sites use sites/example/ansible-navigator.yml instead.
+ansible-navigator:
+  execution-environment:
+    image: ghcr.io/kosmolito/vme-stack-ee:latest
+    pull:
+      policy: tag                     # latest: pulled again when a newer one is published
+    volume-mounts:
+      - {src: "./ansible", dest: /vme-stack-hotfix}   # this clone's code; also its build/
+      - {src: "./logs", dest: /logs}
+    environment-variables:
+      pass: [VME_STACK_DEBUG]
+  mode: stdout
+  playbook-artifact:
+    save-as: "./logs/{playbook_name}-{time_stamp}.json"
+  logging:
+    file: ./logs/ansible-navigator.log

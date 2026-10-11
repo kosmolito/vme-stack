@@ -28,7 +28,6 @@ PINNED_DOCS = [
     ROOT / "README.md",
     EE_README,
     ROOT / "ansible/examples/README.md",
-    ROOT / "sites/example/ansible-navigator.yml",
 ]
 # Sections ee/README.md must keep (what a user of the image needs).
 EE_README_SECTIONS = ["## Build", "## Versions", "## Release", "## Run", "## Hotfix"]
