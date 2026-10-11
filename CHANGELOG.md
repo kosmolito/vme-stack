@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-12
+
 - **[`docs/variables.md`](docs/variables.md)**: every site variable in one place,
   with what it is, its type, whether it is required and its default. Generated
   from the spec preflight validates sites with (`task docs`; `task check` fails
