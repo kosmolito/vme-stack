@@ -10,10 +10,13 @@
         that:
           - groups['hvm'] | default([]) | length > 0
           - groups['deploy_server'] | default([]) | length > 0
-          - site is defined and network is defined and media is defined
+          - site is defined and network is defined
+          - hostvars[groups['deploy_server'][0]].media is defined
+          - hostvars[groups['hvm'][0]].media is not defined
         fail_msg: >-
           {{ inventory_file | default(ansible_inventory_sources | join(', ')) }} is not a vme-stack site inventory:
-          it needs hosts in groups hvm and deploy_server and site, network, media in all.vars
+          it needs hosts in groups hvm and deploy_server, site and network in all.vars, and media
+          (hvm_iso_path, ...) as a host var of the deploy server, not in all.vars
           (a site file from before 0.1.4 has the old format; see sites/example/site.yml)
         quiet: true
 

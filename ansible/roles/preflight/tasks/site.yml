@@ -43,6 +43,17 @@
   register: site_spec
   failed_when: false
 
+- name: Check the deploy server's variables
+  run_once: true
+  ansible.builtin.validate_argument_spec:
+    argument_spec: "{{ specs.argument_specs.deploy_server.options }}"
+    provided_arguments:
+      media: "{{ hostvars[deploy_host].media }}"
+  vars:
+    specs: "{{ lookup('ansible.builtin.file', role_path ~ '/meta/argument_specs.yml') | from_yaml }}"
+  register: deploy_spec
+  failed_when: false
+
 - name: Check this host's variables
   ansible.builtin.validate_argument_spec:
     argument_spec: "{{ specs.argument_specs.hvm_host.options }}"
@@ -59,7 +70,8 @@
     quiet: true
   vars:
     spec_problems: >-
-      {%- set out = site_spec.argument_errors | default([]) | map('regex_replace', '^', 'all.vars: ') | list -%}
+      {%- set out = site_spec.argument_errors | default([]) | map('regex_replace', '^', 'all.vars: ') | list
+                    + deploy_spec.argument_errors | default([]) | map('regex_replace', '^', deploy_host ~ ': ') | list -%}
       {%- for h in ansible_play_hosts_all -%}
       {%-   for e in hostvars[h].host_spec.argument_errors | default([]) -%}{{ out.append(h ~ ': ' ~ e) }}{%- endfor -%}
       {%- endfor -%}
@@ -114,7 +126,7 @@
       {%-   endif -%}
       {{-   clouds.append(cloud) -}}
       {%- endfor -%}
-      {{ {'site': site, 'media': media, 'network': network, 'ssh_jump': ssh_jump | default(''),
+      {{ {'site': site, 'media': hostvars[deploy_host].media, 'network': network, 'ssh_jump': ssh_jump | default(''),
           'hosts': hosts, 'deploy': deploy, 'manager_hosts': groups['vme_manager'] | default([]),
           'vme_manager': mgr, 'vme_groups': vme_groups | default([]), 'vme_clouds': clouds,
           'vme_clusters': vme_clusters | default([])} }}

@@ -1,12 +1,14 @@
 ---
 # Build the per-host HVM install ISO on the deploy server and publish it over
 # HTTP: the stock ISO with /server/{user-data,meta-data} replaced by our seed and
-# GRUB timeout set to 0. The name carries the seed hash, so an unchanged seed is
-# not rebuilt. BMCs/hypervisors fetch it from host_iso_url.
+# GRUB timeout set to 0, as hvm-<host>.iso. hvm-<host>.iso.seed next to it holds
+# the seed hash it was built from: an unchanged seed is not rebuilt. BMCs and
+# hypervisors fetch it from host_iso_url; a host that boots an older copy is
+# caught after the install (wait_ssh checks the install id = <host>-<seed hash>).
 - name: Set ISO names
   ansible.builtin.set_fact:
-    host_iso_name: "vme-stack-{{ inventory_hostname }}-{{ seed_sha }}.iso"
-    host_iso_url: "{{ media_url }}/isos/vme-stack-{{ inventory_hostname }}-{{ seed_sha }}.iso"
+    host_iso_name: "hvm-{{ inventory_hostname }}.iso"
+    host_iso_url: "{{ media_url }}/isos/hvm-{{ inventory_hostname }}.iso"
     host_work: "{{ media_work_dir }}/{{ inventory_hostname }}"
 
 - name: Check source ISO exists
@@ -16,14 +18,16 @@
   register: src_iso
   failed_when: not src_iso.stat.exists
 
-- name: Check for an already built host ISO
-  ansible.builtin.stat:
-    path: "{{ media_www_root }}/isos/{{ host_iso_name }}"
+- name: Read the seed hash of an already built host ISO
+  ansible.builtin.shell: >-
+    test -f {{ (media_www_root ~ '/isos/' ~ host_iso_name) | quote }}
+    && cat {{ (media_www_root ~ '/isos/' ~ host_iso_name ~ '.seed') | quote }} 2>/dev/null || true
   delegate_to: "{{ deploy_host }}"
-  register: host_iso
+  register: host_iso_seed
+  changed_when: false
 
 - name: Build host ISO
-  when: not host_iso.stat.exists
+  when: host_iso_seed.stdout | trim != seed_sha
   delegate_to: "{{ deploy_host }}"
   block:
     - name: Create work directory
@@ -87,16 +91,27 @@
         argv: [mv, "{{ host_work }}/{{ host_iso_name }}.partial", "{{ media_www_root }}/isos/{{ host_iso_name }}"]
       changed_when: true
 
-    - name: Remove older ISOs of this host
+    - name: Record the seed hash the ISO was built from
+      ansible.builtin.copy:
+        content: "{{ seed_sha }}\n"
+        dest: "{{ media_www_root }}/isos/{{ host_iso_name }}.seed"
+        mode: "0644"
+
+    - name: Remove ISOs of this host named the pre-0.1.4 way (vme-stack-<host>-<hash>.iso)
       ansible.builtin.shell: >-
-        find {{ media_www_root | quote }}/isos -maxdepth 1 -name 'vme-stack-{{ inventory_hostname }}-*.iso'
-        ! -name '{{ host_iso_name }}' -delete
+        find {{ media_www_root | quote }}/isos -maxdepth 1 -name 'vme-stack-{{ inventory_hostname }}-*.iso' -delete
       changed_when: false
 
-# For tools that attach the ISO themselves (lab Terraform reads this file).
-- name: Record the ISO URL on the controller
+# For tools that attach the ISO themselves (lab Terraform reads these files; the
+# seed hash tells it the content changed under the same URL).
+- name: Record the ISO URL and its seed hash on the controller
   ansible.builtin.copy:
-    content: "{{ host_iso_url }}\n"
-    dest: "{{ playbook_dir }}/build/{{ inventory_hostname }}/iso_url"
+    content: "{{ item.value }}\n"
+    dest: "{{ playbook_dir }}/build/{{ inventory_hostname }}/{{ item.file }}"
     mode: "0644"
+  loop:
+    - {file: iso_url, value: "{{ host_iso_url }}"}
+    - {file: iso_seed, value: "{{ seed_sha }}"}
+  loop_control:
+    label: "{{ item.file }}"
   delegate_to: localhost

@@ -114,16 +114,16 @@ def _format_errors(site):
         errs.append(f"network.proxy '{net['proxy']}' is not an http(s) URL")
     if net.get("timezone") and not re.match(r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}$", net["timezone"]):
         errs.append(f"network.timezone '{net['timezone']}' is not an IANA time zone like Europe/Stockholm")
-    for k in ("hvm_iso", "vme_iso"):
+    for k in ("hvm_iso_path", "vme_iso_path"):
         if k in media and not re.match(r"^/.+\.iso$", str(media[k])):
-            errs.append(f"media.{k} '{media[k]}' is not an absolute path to an .iso file")
+            errs.append(f"deploy server media.{k} '{media[k]}' is not an absolute path to an .iso file")
     for k in ("www_root", "work_dir"):
         if k in media and not str(media[k]).startswith("/"):
-            errs.append(f"media.{k} '{media[k]}' is not an absolute path")
+            errs.append(f"deploy server media.{k} '{media[k]}' is not an absolute path")
     if "port" in media and not 1 <= int(media["port"]) <= 65535:
-        errs.append(f"media.port {media['port']} is not a port")
+        errs.append(f"deploy server media.port {media['port']} is not a port")
     if media.get("url") and not re.match(r"^https?://\S+[^/]$", media["url"]):
-        errs.append(f"media.url '{media['url']}' is not an http(s) URL without a trailing slash")
+        errs.append(f"deploy server media.url '{media['url']}' is not an http(s) URL without a trailing slash")
     if site.get("ssh_jump") and not re.match(r"^[a-z_][a-z0-9_.-]*@[^\s@]+$", site["ssh_jump"]):
         errs.append(f"ssh_jump '{site['ssh_jump']}' is not user@host")
     mgr = site.get("vme_manager")
@@ -212,7 +212,8 @@ def vme_site_errors(site, roles_dir):
     seed_mode = site["media"].get("seed_mode", "embedded")
     if seed_mode not in IMPLEMENTED_SEED_MODES:
         errs.append(
-            f"media.seed_mode '{seed_mode}' is not implemented yet (use: {', '.join(sorted(IMPLEMENTED_SEED_MODES))})"
+            f"deploy server media.seed_mode '{seed_mode}' is not implemented yet "
+            f"(use: {', '.join(sorted(IMPLEMENTED_SEED_MODES))})"
         )
 
     good_ip = [h for h in hosts if _is_ipv4(h["ip"])]
@@ -290,8 +291,8 @@ def vme_site_errors(site, roles_dir):
             )
         elif mhosts[0] not in names:
             errs.append(f"group vme_manager: '{mhosts[0]}' is not an HVM host (group hvm)")
-        if "vme_iso" not in site["media"]:
-            errs.append("vme_manager needs media.vme_iso (HPE's VM Essentials software ISO on the deploy server)")
+        if "vme_iso_path" not in site["media"]:
+            errs.append("vme_manager needs the deploy server's media.vme_iso_path (HPE's VM Essentials software ISO)")
         if _is_ipv4(mgr["ip"]):
             if not _usable(mgr["ip"], subnet):
                 errs.append(f"vme_manager.ip {mgr['ip']} is not a usable address in {subnet}")

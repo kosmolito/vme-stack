@@ -13,7 +13,7 @@ Manager running and set up, an HVM cluster with shared NFS storage.
 Both need:
 
 - a **deploy server** (Ubuntu/Debian or RHEL family) on the mgmt network, an SSH user
-  with passwordless sudo, and HPE's two ISOs at the paths in `media`
+  with passwordless sudo, and HPE's two ISOs at the paths in its `media` (`hvm_iso_path`, `vme_iso_path`)
 - an **NFS export** for the cluster (`vme_clusters[].datastores`)
 - ansible-navigator and Docker or Podman on the machine you run from
 - a site directory, copied from the example, plus `ansible-navigator.yml` from
@@ -61,7 +61,7 @@ ansible-navigator run deploy.yml
 ```
 
 1. The run builds one ISO per host and prints its URL, e.g.
-   `Attach and boot hvm01 from: http://192.168.50.5:8080/isos/vme-stack-hvm01-<sha>.iso`
+   `Attach and boot hvm01 from: http://192.168.50.5:8080/isos/hvm-hvm01.iso`
 2. Download/attach that ISO to the VM and boot from it (the run waits up to 45 min
    per host). The install needs no input.
 3. When the hosts answer on SSH, the run continues alone: post-install, Manager,

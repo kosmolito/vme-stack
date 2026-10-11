@@ -7,10 +7,6 @@ all:
   vars:
     site: poc
 
-    media:                            # on the deploy server
-      hvm_iso: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso
-      vme_iso: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso
-
     network:
       domain: poc.example.com
       gateway: 192.168.50.1
@@ -50,6 +46,9 @@ all:
           ansible_host: 192.168.50.5
           ansible_user: deploy        # an existing login with passwordless sudo
           ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/vme-stack"   # its key, in the site directory
+          media:                      # ISOs on this server; it builds and serves the install media
+            hvm_iso_path: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso
+            vme_iso_path: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso
 
     # One vNIC for mgmt, one for compute; each becomes a bond with one member (bond0,
     # bond1). Fixed MACs. mgmt vNIC: port group / bridge of the mgmt VLAN (access, the

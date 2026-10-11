@@ -3,8 +3,8 @@
 # ansible/examples/vm and ansible/examples/baremetal.
 #
 # The site file is a plain Ansible inventory (YAML), any name ending in .yml:
-#   all.vars              settings of the whole site (network, media, Manager, ...)
-#   deploy_server         the one machine that builds and serves the install media
+#   all.vars              settings of the whole site (network, Manager, ...)
+#   deploy_server         the one machine that builds and serves the install media (its media settings)
 #   hvm                   the HVM hosts; hvm.vars are the defaults every host can override
 #   vme_manager           the one HVM host that runs the VME Manager VM
 # Values marked "default" can be left out. Every value is literal or an Ansible
@@ -23,15 +23,6 @@
 all:
   vars:
     site: example                     # short name: run logs, Manager tenant default
-
-    media:                            # paths on the deploy server
-      hvm_iso: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso   # stock HVM install ISO
-      vme_iso: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso   # Manager image; needed with vme_manager
-      seed_mode: embedded             # default; the seed goes into a per-host ISO (http: not implemented)
-      www_root: /srv/vme-stack/www    # default; nginx serves it, ISOs in <www_root>/isos/
-      work_dir: /srv/vme-stack/work   # default; scratch space for ISO builds
-      port: 8080                      # default; nginx
-      # url: https://media.example.com   # if hosts/BMCs fetch media through another URL (default http://<deploy server>:<port>)
 
     network:                          # the mgmt network all hosts share
       domain: example.com
@@ -110,6 +101,14 @@ all:
           ansible_host: 10.30.0.5     # hosts and BMCs fetch media from here; Ansible connects to it
           ansible_user: deploy        # an existing login with passwordless sudo
           ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy_server"   # its key, in the site directory
+          media:                      # what this server builds and serves; paths on it
+            hvm_iso_path: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso   # stock HVM install ISO
+            vme_iso_path: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso   # Manager image; needed with vme_manager
+            seed_mode: embedded             # default; the seed goes into a per-host ISO (http: not implemented)
+            www_root: /srv/vme-stack/www    # default; nginx serves it, ISOs in <www_root>/isos/
+            work_dir: /srv/vme-stack/work   # default; scratch space for ISO builds
+            port: 8080                      # default; nginx
+            # url: https://media.example.com   # if hosts/BMCs fetch media through another URL (default http://<deploy server>:<port>)
           # ansible_connection: local # Ansible installed on the deploy server itself (not from the container)
 
     hvm:

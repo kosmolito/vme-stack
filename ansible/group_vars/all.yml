@@ -8,15 +8,17 @@ install_wait_timeout: "{{ wait_ssh_timeout | default(2700) }}"    # 45 min
 install_force: "{{ force_reinstall | default(false) | bool }}"
 install_keep_iso: "{{ keep_host_iso | default(false) | bool }}"   # keep the per-host ISO once the host is installed
 
-# The deploy server: builds and serves the media; DNS/NTP/SSH probes run from it
+# The deploy server: builds and serves the media (its host var media); DNS/NTP/SSH
+# probes run from it
 deploy_host: "{{ groups['deploy_server'][0] }}"
 probe_from: "{{ deploy_host }}"
-hvm_src_iso: "{{ media.hvm_iso }}"
-seed_mode: "{{ media.seed_mode | default('embedded') }}"
-media_www_root: "{{ media.www_root | default('/srv/vme-stack/www') }}"
-media_work_dir: "{{ media.work_dir | default('/srv/vme-stack/work') }}"
-media_port: "{{ media.port | default(8080) }}"
-media_url: "{{ media.url | default('http://' ~ hostvars[deploy_host].ansible_host ~ ':' ~ media_port) }}"
+deploy_media: "{{ hostvars[deploy_host].media | default({}) }}"
+hvm_src_iso: "{{ deploy_media.hvm_iso_path }}"
+seed_mode: "{{ deploy_media.seed_mode | default('embedded') }}"
+media_www_root: "{{ deploy_media.www_root | default('/srv/vme-stack/www') }}"
+media_work_dir: "{{ deploy_media.work_dir | default('/srv/vme-stack/work') }}"
+media_port: "{{ deploy_media.port | default(8080) }}"
+media_url: "{{ deploy_media.url | default('http://' ~ hostvars[deploy_host].ansible_host ~ ':' ~ media_port) }}"
 
 # The mgmt network
 domain: "{{ network.domain }}"
@@ -57,7 +59,7 @@ manager: >-
       'datastore': vme_manager.datastore | default(''),
       'autostart': vme_manager.autostart | default(false),
       'netmask': mask | join('.'), 'gateway': network.gateway, 'dns': network.dns,
-      'compute_vlans': network.compute_vlans | default([]), 'vme_iso': media.vme_iso | default('')} }}
+      'compute_vlans': network.compute_vlans | default([]), 'vme_iso': deploy_media.vme_iso_path | default('')} }}
   {%- else -%}{{ {} }}{%- endif -%}
 
 # Manager objects: groups by name, clouds with defaults, clusters with their group

@@ -19,8 +19,10 @@ that section into the release's section (and refuses to release with it empty).
   was `ip`, deploy server `address`), `ansible_user` (was `hvm_admin_user`,
   deploy server `user`), `ansible_ssh_private_key_file` (was
   `hvm_ssh_private_key`/`ssh_private_key`, now `"{{ inventory_dir }}/keys/..."`);
-  `ssh_jump` (was `deploy_server.jump`); `media.www_root`/`work_dir`/`port`/`url`
-  (were `deploy_server.*`). Convert old site files after `sites/example/site.yml`;
+  `ssh_jump` (was `deploy_server.jump`). `media` is a host var of the deploy server
+  (it describes that server), with `hvm_iso_path`/`vme_iso_path` (were `hvm_iso`/
+  `vme_iso`) and `www_root`/`work_dir`/`port`/`url` (were `deploy_server.*`).
+  Convert old site files after `sites/example/site.yml`;
   an old file fails with "not a vme-stack site inventory".
 - **Validation per variable**: preflight (and `validate.yml`, which contacts no
   machine) checks that secrets resolve, every variable against
@@ -28,6 +30,9 @@ that section into the release's section (and refuses to release with it empty).
   unknown keys of known dicts), then the site rules (formats, unique IPs/MACs,
   references, one deploy server and one Manager host); every problem of a step at
   once, over the whole site even with `--limit`.
+- Per-host ISOs are named `hvm-<host>.iso` (was `vme-stack-<host>-<seed hash>.iso`);
+  the seed hash sits in `hvm-<host>.iso.seed` next to it, so an unchanged seed is
+  still not rebuilt. A host that boots an older copy is caught by the install-id check.
 - Fix: `media_server` read the deploy server's state wrongly where `systemctl`
   prints nothing (e.g. without systemd).
 

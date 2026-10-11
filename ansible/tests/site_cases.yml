@@ -6,7 +6,6 @@ base:
   all:
     vars:
       site: test
-      media: {hvm_iso: /srv/vme-stack/src/HVM.iso, vme_iso: /srv/vme-stack/src/VME.iso}
       network:
         domain: example.com
         gateway: 10.0.0.1
@@ -39,7 +38,11 @@ base:
     children:
       deploy_server:
         hosts:
-          deploy: {ansible_host: 10.0.0.5, ansible_user: deploy, ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy"}
+          deploy:
+            ansible_host: 10.0.0.5
+            ansible_user: deploy
+            ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy"
+            media: {hvm_iso_path: /srv/vme-stack/src/HVM.iso, vme_iso_path: /srv/vme-stack/src/VME.iso}
       hvm:
         vars:
           platform: manual
@@ -65,6 +68,12 @@ cases:
   - name: not a site inventory
     patch: {all: {vars: {site: null}}}
     expect: is not a vme-stack site inventory
+  - name: media in all.vars (before 0.1.4)
+    patch: {all: {vars: {media: {hvm_iso_path: /srv/x.iso}}}}
+    expect: as a host var of the deploy server, not in all.vars
+  - name: deploy server media with an unknown key
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {hvm_iso: /srv/old-name.iso}}}}}}}
+    expect: "deploy: media.hvm_iso. Supported parameters include"
   - name: secret that does not resolve
     patch: {all: {children: {hvm: {vars: {hvm_admin_password: "{{ no_such_variable }}"}}}}}
     expect: "secrets that do not resolve"
@@ -134,7 +143,7 @@ cases:
               hvm01: {bmc: {address: 10.0.1.21, username: "{{ vault_ilo.username }}", password: "{{ vault_ilo.password }}"}}
     expect: does not use a bmc block
   - name: seed_mode http not implemented
-    patch: {all: {vars: {media: {seed_mode: http}}}}
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {seed_mode: http}}}}}}}
     expect: is not implemented yet
   - name: netplan mgmt interface not defined
     patch:
@@ -210,8 +219,8 @@ cases:
     patch: {all: {vars: {vme_manager: {ip: 10.0.0.22}}}}
     expect: vme_manager.ip 10.0.0.22 is already used
   - name: Manager without the VME ISO
-    patch: {all: {vars: {media: {vme_iso: null}}}}
-    expect: vme_manager needs media.vme_iso
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {vme_iso_path: null}}}}}}}
+    expect: "vme_manager needs the deploy server's media.vme_iso_path"
   - name: Manager datastore not a cluster datastore
     patch: {all: {vars: {vme_manager: {datastore: nfs99}}}}
     expect: "vme_manager.datastore 'nfs99' is not one of cluster 'sto-hvm01' datastores"

@@ -194,7 +194,9 @@
 # The ISO has served its purpose; it is rebuilt on the next install.
 - name: Remove the host ISO from the media server
   ansible.builtin.shell: >-
-    find {{ media_www_root | quote }}/isos -maxdepth 1 -name 'vme-stack-{{ inventory_hostname }}-*.iso' -print -delete
+    find {{ media_www_root | quote }}/isos -maxdepth 1
+    \( -name 'hvm-{{ inventory_hostname }}.iso' -o -name 'hvm-{{ inventory_hostname }}.iso.seed'
+    -o -name 'vme-stack-{{ inventory_hostname }}-*.iso' \) -print -delete
   delegate_to: "{{ deploy_host }}"
   register: iso_rm
   changed_when: iso_rm.stdout | length > 0
@@ -204,7 +206,8 @@
 # deletes the hypervisor's copy.
 - name: Forget the ISO URL on the controller
   ansible.builtin.file:
-    path: "{{ playbook_dir }}/build/{{ inventory_hostname }}/iso_url"
+    path: "{{ playbook_dir }}/build/{{ inventory_hostname }}/{{ item }}"
     state: absent
+  loop: [iso_url, iso_seed]
   delegate_to: localhost
   when: not install_keep_iso | bool
