@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-11
+
 - **Run logs**: every `ansible-playbook` run in the container writes its whole
   output to `/logs/<date>-<time>-<playbook>.log` when a writable `/logs` is
   mounted (`-v $PWD/logs:/logs`); without it the run says the log is lost.
