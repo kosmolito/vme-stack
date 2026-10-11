@@ -1,0 +1,35 @@
+---
+# ansible-navigator settings for this site directory: run vme-stack from here.
+#   cd sites/acme
+#   ansible-navigator run preflight.yml          # then deploy.yml, or one stage:
+#                                                # hvm_hosts.yml, vme_manager.yml, vme_cluster.yml
+#   VME_STACK_DEBUG=1 ansible-navigator run deploy.yml   # verbose + support bundle in logs/
+#   ansible-navigator run collect.yml            # support bundle only
+#   ansible-navigator replay logs/<run>.json     # step through a past run
+#   ansible-navigator exec -- bash               # shell in the container
+# Needs Docker or Podman and `pip install ansible-navigator`; setup: README.md.
+# Paths are relative to this directory. In the container this directory is /site
+# (read-only), logs/ is /logs and build/ keeps rendered seeds and ISO URLs.
+ansible-navigator:
+  ansible:
+    inventory:
+      entries: [/site/site.yml]
+    # The vault password from .vault_pass (chmod 600, never committed). Without
+    # it: remove this line and run with --ask-vault-pass --pae false (navigator
+    # cannot prompt while it records the run).
+    cmdline: "--vault-password-file /site/.vault_pass"
+  execution-environment:
+    image: ghcr.io/kosmolito/vme-stack-ee:0.1.3
+    pull:
+      policy: missing
+    volume-mounts:
+      - {src: ".", dest: /site, options: ro}
+      - {src: "./logs", dest: /logs}
+      - {src: "./build", dest: /opt/vme-stack/code/build}
+    environment-variables:
+      pass: [VME_STACK_DEBUG]
+  mode: stdout
+  playbook-artifact:
+    save-as: "./logs/{playbook_name}-{time_stamp}.json"
+  logging:
+    file: ./logs/ansible-navigator.log

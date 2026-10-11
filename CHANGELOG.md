@@ -9,6 +9,19 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **Run with ansible-navigator** from the site directory:
+  `cd sites/acme && ansible-navigator run deploy.yml`. `sites/example/ansible-navigator.yml`
+  sets the image, mounts the site directory (`/site`), `logs/` and `build/` (seeds
+  and ISO URLs now survive the container), the inventory and the vault password
+  file. Navigator records every run in `logs/` (`ansible-navigator replay`).
+  Plain `docker run` stays documented; `--network host` is not needed.
+- **Site file name is free**: any `.yml`/`.yaml` file with top-level `site:` and
+  `version:` is a site file (was: `site.yml` or `*.site.yml`); another YAML file
+  gets a clear "not a vme-stack site file" message.
+- **Keys in the site directory**: `keys/...`, written relative to the site file,
+  so they work the same with and without the container. A key that is not found
+  now comes with that hint.
+
 ## [0.1.3] - 2026-10-11
 
 - **Run logs**: every `ansible-playbook` run in the container writes its whole

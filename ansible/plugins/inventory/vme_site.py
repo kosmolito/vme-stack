@@ -5,8 +5,10 @@ DOCUMENTATION = r"""
 name: vme_site
 short_description: vme-stack site file as inventory
 description:
-  - Reads a vme-stack site file (named C(site.yml) or C(*.site.yml)) and validates it
-    against C(schemas/site.schema.json). Every schema error is listed at once.
+  - Reads a vme-stack site file (any C(.yml)/C(.yaml) name; recognised by its top-level
+    C(site) and C(version)) and validates it against C(schemas/site.schema.json).
+    Every schema error is listed at once. It is the only inventory plugin enabled
+    (ansible.cfg), so it claims every YAML inventory source.
   - Builds group C(hvm) (one host per C(hosts[]) entry) and C(deploy_server),
     and maps site fields onto the host variables the roles use. Cross-field rules (unique
     IP/MAC, IP inside the subnet, driver exists) are checked by the preflight role, not here.
@@ -73,14 +75,17 @@ class InventoryModule(BaseInventoryPlugin):
     NAME = "vme_site"
 
     def verify_file(self, path):
-        name = os.path.basename(path)
-        return super().verify_file(path) and (
-            name in ("site.yml", "site.yaml") or name.endswith((".site.yml", ".site.yaml"))
-        )
+        # Any YAML file: parse() says clearly when it is not a site file (better than
+        # Ansible's generic "failed to parse" for a file the plugin did not claim).
+        return super().verify_file(path) and path.endswith((".yml", ".yaml"))
 
     def parse(self, inventory, loader, path, cache=True):
         super().parse(inventory, loader, path, cache)
         site = self.loader.load_from_file(path, cache="none")
+        if not (isinstance(site, dict) and "site" in site and "version" in site):
+            raise AnsibleParserError(
+                f"{path} is not a vme-stack site file (no top-level 'site:' and 'version:'); see sites/example/site.yml"
+            )
         # Round-trip through JSON: plain types for jsonschema and for the host vars.
         site = json.loads(json.dumps(site))
         self._validate(site, path)

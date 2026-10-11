@@ -23,36 +23,43 @@ cluster. Secrets (passwords, keys) live in an Ansible Vault file next to it.
 
 ## Quick start
 
-You need the container image (`ghcr.io/kosmolito/vme-stack-ee`), Docker or Podman,
-and a site directory:
+You need Docker or Podman, [ansible-navigator](https://ansible.readthedocs.io/projects/navigator/)
+(`pip install ansible-navigator`), and a **site directory**: everything about one
+site in one folder. The container image (`ghcr.io/kosmolito/vme-stack-ee`) brings
+the code and all tools; navigator runs it with this folder mounted.
 
 ```
 sites/acme/
-  site.yml                    # the site, from an example (see below)
+  site.yml                    # the site (any name ending in .yml), from an example
+  ansible-navigator.yml       # how to run it: image, mounts (from sites/example/)
   group_vars/all/vault.yml    # secrets, encrypted with ansible-vault
+  .vault_pass                 # vault password (chmod 600), or ask each run
   keys/deploy_server          # SSH key of your login on the deploy server
   keys/hvm_hosts              # SSH key vme-stack installs for the hosts' admin user
+  logs/                       # run logs, run records, support bundles (written by runs)
+  build/                      # rendered seeds and ISO URLs (written by runs)
 ```
 
-In `site.yml`, point to the keys relative to the file: `deploy_server.ssh_private_key:
-keys/deploy_server` and `defaults.hvm_ssh_private_key: keys/hvm_hosts` (one file for
-both works too).
+**Keys belong in the site directory.** In `site.yml` write them relative to the
+file: `deploy_server.ssh_private_key: keys/deploy_server`,
+`defaults.hvm_ssh_private_key: keys/hvm_hosts` (one file for both works too). The
+container sees only the site directory, so a key elsewhere is not found.
 
-Check everything first (changes nothing), then deploy:
+Set it up from the reference site ([`sites/example/README.md`](sites/example/README.md)
+has the details), then check everything (changes nothing) and deploy:
 
 ```bash
-mkdir -p logs                 # run logs land here (writable for the container's uid 1000)
-docker run --rm -it -v $PWD/sites/acme:/site:ro -v $PWD/logs:/logs ghcr.io/kosmolito/vme-stack-ee:latest \
-  ansible-playbook preflight.yml -i /site/site.yml --ask-vault-pass
-
-docker run --rm -it -v $PWD/sites/acme:/site:ro -v $PWD/logs:/logs ghcr.io/kosmolito/vme-stack-ee:latest \
-  ansible-playbook deploy.yml -i /site/site.yml --ask-vault-pass
+cd sites/acme
+ansible-navigator run preflight.yml
+ansible-navigator run deploy.yml
 ```
 
-Every run writes its log to `logs/`. **Something went wrong?** Run it again with
-`-e VME_STACK_DEBUG=1` after `docker run`: more detail, and at the end (also after a
-failure) a support bundle `logs/vme-stack-support-<site>-<date>.tar.gz` with the
-logs and state of all machines, secrets replaced. Send that file. Details:
+Every run writes its log and a full record to `logs/`; `ansible-navigator replay
+logs/<run>.json` steps through a past run task by task. **Something went wrong?**
+Run it again with `VME_STACK_DEBUG=1 ansible-navigator run deploy.yml`: more detail,
+and at the end (also after a failure) a support bundle
+`logs/vme-stack-support-<site>-<date>.tar.gz` with the logs and state of all
+machines, secrets replaced. Send that file. Details:
 [`ee/README.md`](ee/README.md#logs-and-support-bundle).
 
 Example sites with step-by-step guides, for VMs and for bare metal:
@@ -60,9 +67,10 @@ Example sites with step-by-step guides, for VMs and for bare metal:
 [`sites/example/`](sites/example/README.md).
 
 Running it again is safe: finished steps are skipped. Stages can also run alone:
-`hvm_hosts.yml`, `vme_manager.yml`, `vme_cluster.yml`.
+`hvm_hosts.yml`, `vme_manager.yml`, `vme_cluster.yml` (e.g. `ansible-navigator run
+hvm_hosts.yml --limit hvm02 -e force_reinstall=true`).
 
-More on running the container (from a Mac, interactively, emergency hotfixes):
+More on running the container (without navigator, from a Mac, emergency hotfixes):
 [`ee/README.md`](ee/README.md).
 
 ## Repository

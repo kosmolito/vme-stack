@@ -48,11 +48,15 @@
 
 - name: Collect controller problems
   run_once: true
+  vars:
+    key_hint: >-
+      {{ ' (keep keys in the site directory, e.g. keys/deploy_server, and write the path relative to the site file;'
+         ~ ' in the container only the site directory is mounted)' }}
   ansible.builtin.set_fact:
     controller_problems: >-
       {%- set out = [] -%}
       {%- for k in ssh_key.results -%}
-      {%-   if not k.stat.exists -%}{{ out.append('SSH private key not found: ' ~ k.item) }}
+      {%-   if not k.stat.exists -%}{{ out.append('SSH private key not found: ' ~ k.item ~ key_hint) }}
       {%-   elif k.stat.mode | int(base=8) % 64 != 0 -%}
       {{-     out.append('SSH private key ' ~ k.item ~ ' is readable by others (mode ' ~ k.stat.mode ~ '); ssh will refuse it. chmod 600 it.') -}}
       {%-   endif -%}

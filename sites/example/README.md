@@ -8,33 +8,48 @@ and look things up here.
 
 ## A site directory
 
+Everything about one site in one folder; runs read it and write `logs/` and `build/`
+into it:
+
 ```
 sites/acme/                       # anywhere; sites/ is gitignored in this repository
-  site.yml                        # from site.yml here, trimmed to your site
+  site.yml                        # from site.yml here, trimmed to your site (any name ending in .yml)
+  ansible-navigator.yml           # how to run it (from here; names site.yml as /site/site.yml)
   keys/deploy_server              # your login's key on the deploy server (chmod 600)
   keys/hvm_hosts                  # key for the hosts' admin user (chmod 600), created below
   group_vars/all/vault.yml        # from vault.example.yml, then: ansible-vault encrypt
-  .vault_pass                     # optional, for --vault-password-file
+  .vault_pass                     # the vault password (chmod 600)
+  logs/                           # run logs, run records (.json), support bundles
+  build/                          # rendered seeds and ISO URLs
 ```
+
+Keys live here, written relative to the site file (`keys/deploy_server`): the
+container only sees this directory (as `/site`).
 
 ```bash
 cp -r sites/example sites/acme && cd sites/acme
-mkdir -p keys && cp ~/.ssh/<deploy server key> keys/deploy_server
+mkdir -p keys logs build
+cp ~/.ssh/<deploy server key> keys/deploy_server && chmod 600 keys/deploy_server
 ssh-keygen -t ed25519 -N '' -C vme-stack -f keys/hvm_hosts   # installed on the hosts by the run
 mkdir -p group_vars/all && mv vault.example.yml group_vars/all/vault.yml
 $EDITOR site.yml group_vars/all/vault.yml
-ansible-vault encrypt group_vars/all/vault.yml
+touch .vault_pass && chmod 600 .vault_pass && $EDITOR .vault_pass   # one line: the vault password
+ansible-vault encrypt group_vars/all/vault.yml --vault-password-file .vault_pass
 ```
 
-Keep site directories out of this public repository: in a private repository or
-on the deploy server. Then check and run (from `ansible/`, or with the container
-image as in the main [README](../../README.md)):
+Keep site directories out of this public repository: in a private repository (add
+`.vault_pass`, `keys/`, `logs/`, `build/` to its `.gitignore`) or on the deploy
+server. Then check and run:
 
 ```bash
-ansible-inventory -i ../sites/acme/site.yml --graph                     # schema check
-ansible-playbook preflight.yml -i ../sites/acme/site.yml --ask-vault-pass   # changes nothing
-ansible-playbook deploy.yml -i ../sites/acme/site.yml --ask-vault-pass
+ansible-navigator run preflight.yml        # changes nothing
+ansible-navigator run deploy.yml
+VME_STACK_DEBUG=1 ansible-navigator run deploy.yml   # if something fails: support bundle in logs/
 ```
+
+Without `.vault_pass`: remove the `cmdline` line in `ansible-navigator.yml` and run
+with `--ask-vault-pass --pae false`. With a different site file name, change
+`/site/site.yml` there.
 
 ## What the example shows
 

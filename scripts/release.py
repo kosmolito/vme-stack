@@ -24,7 +24,12 @@ CHANGELOG = ROOT / "CHANGELOG.md"
 EE_README = ROOT / "ee/README.md"
 BUILD_SH = ROOT / "ee/build.sh"
 # Docs that may show a pinned image version; prepare points them to the release.
-PINNED_DOCS = [ROOT / "README.md", EE_README, ROOT / "ansible/examples/README.md"]
+PINNED_DOCS = [
+    ROOT / "README.md",
+    EE_README,
+    ROOT / "ansible/examples/README.md",
+    ROOT / "sites/example/ansible-navigator.yml",
+]
 # Sections ee/README.md must keep (what a user of the image needs).
 EE_README_SECTIONS = ["## Build", "## Versions", "## Release", "## Run", "## Hotfix"]
 

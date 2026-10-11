@@ -10,7 +10,7 @@ Unattended install of HPE VM Essentials: HVM hosts, then the VME Manager, then t
 
 ## Running
 
-Everything Ansible needs is in the EE `vme-stack-ee` (build: `ee/build.sh`; usage and release: `ee/README.md`). Released: `ghcr.io/kosmolito/vme-stack-ee` (tags `vX.Y.Z`, workflow `ee-release`).
+Everything Ansible needs is in the EE `vme-stack-ee` (build: `ee/build.sh`; usage and release: `ee/README.md`). Released: `ghcr.io/kosmolito/vme-stack-ee` (tags `vX.Y.Z`, workflow `ee-release`). Users run it with ansible-navigator from a site directory (`sites/example/ansible-navigator.yml`); below: Ansible installed natively.
 
 ```bash
 cd ansible

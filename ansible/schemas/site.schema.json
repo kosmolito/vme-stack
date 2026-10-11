@@ -155,7 +155,7 @@
           "minLength": 1
         },
         "ssh_private_key": {
-          "description": "Private key file on the controller (where the playbook or the EE runs) for user on the deploy server; also used for jump. Relative paths are relative to the site file. Never commit it.",
+          "description": "Private key file for user on the deploy server; also used for jump. Keep it in the site directory, e.g. keys/deploy_server: relative paths start at the site file, and in the container only the site directory is mounted (as /site). Never commit it.",
           "type": "string",
           "minLength": 1
         },
@@ -602,7 +602,7 @@
           "default": "hvmadmin"
         },
         "hvm_ssh_private_key": {
-          "description": "Private key file on the controller for hvm_admin_user on the HVM hosts. Its public key is installed for that user automatically (derived at preflight). Relative paths are relative to the site file; may be the same file as deploy_server.ssh_private_key. Never commit it.",
+          "description": "Private key file for hvm_admin_user on the HVM hosts; its public key is installed for that user automatically (derived at preflight). Keep it in the site directory, e.g. keys/hvm_hosts (relative to the site file); may be the same file as deploy_server.ssh_private_key. Never commit it.",
           "type": "string",
           "minLength": 1
         },

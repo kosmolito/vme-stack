@@ -68,69 +68,76 @@ tag arrives:
 
 ## Run
 
-Mount the site directory as `/site`. Paths inside the site file are relative to
-it, e.g. `ssh_private_key: ../../keys/deploy_server` resolves to `/keys/deploy_server`.
+The usual way is **ansible-navigator** from the site directory, with the settings
+file from [`sites/example/ansible-navigator.yml`](../sites/example/ansible-navigator.yml)
+(image, mounts, inventory, vault password file, run records):
 
 ```bash
-docker run --rm -it --network host \
-  -v /srv/vme-stack/sites/acme:/site:ro \
-  -v /srv/vme-stack/keys:/keys:ro \
-  vme-stack-ee:0.1.3 \
+cd sites/acme                  # site.yml, ansible-navigator.yml, keys/, group_vars/, logs/, build/
+ansible-navigator run preflight.yml
+ansible-navigator run deploy.yml
+ansible-navigator run hvm_hosts.yml --limit hvm02 -e force_reinstall=true
+ansible-navigator exec -- bash # shell in the container (code dir), e.g. ansible-inventory --graph
+```
+
+The playbooks are in the image; navigator only needs their names. The site
+directory is `/site` in the container (read-only), `logs/` is `/logs`, `build/`
+keeps rendered seeds and ISO URLs across runs (e.g. for Terraform that boots VMs
+from them). Create `logs/` and `build/` before the first run.
+
+Without navigator, the same with plain Docker or Podman:
+
+```bash
+cd sites/acme
+docker run --rm -it -v $PWD:/site:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-stack/code/build \
+  ghcr.io/kosmolito/vme-stack-ee:0.1.3 \
   ansible-playbook deploy.yml -i /site/site.yml --vault-password-file /site/.vault_pass
 ```
 
-- The image is multi-arch (linux/amd64, linux/arm64): on an Apple Silicon Mac
-  Docker pulls the native arm64 variant.
-- On a client (e.g. macOS) leave out `--network host` and use
-  `deploy_server.connection: ssh`: the pipeline only makes outgoing connections
-  (SSH, HTTPS, Redfish), which work from Docker Desktop's normal network, also over VPN.
-- `--network host`: the container uses the deploy server's network (mgmt network,
-  BMCs). On the deploy server itself, use `deploy_server.connection: ssh` with its
-  own address: `local` would mean inside the container.
-- Without `--vault-password-file`, use `-it` and `--ask-vault-pass`.
-- Interactive: leave out the command to get a shell (`bash`) in the code directory,
-  then run `ansible-playbook ...`, `ansible-inventory -i /site/site.yml --graph`, etc.
-- Runs as uid 1000 (group 0); mounted files must be readable for it.
+- Paths in the site file are relative to it, so keys belong in the site directory
+  (`keys/...`): the container sees nothing else.
+- The pipeline only makes outgoing connections (SSH, HTTPS, Redfish); no
+  `--network host` needed, also not on a Mac or over VPN.
+- On the deploy server itself, keep `deploy_server.connection: ssh` with its own
+  address: `local` would mean inside the container.
+- The image is multi-arch (linux/amd64, linux/arm64): an Apple Silicon Mac gets the
+  native arm64 variant.
+- Runs as uid 1000 (group 0): mounted files must be readable for it, `logs/` and
+  `build/` writable (on Linux with another uid: `chmod a+rwx logs build`, and keys
+  and `.vault_pass` readable for uid 1000; Docker Desktop on a Mac maps this itself).
+- Without a command (plain Docker), the container starts a shell in the code directory.
 
 ## From a client (e.g. a Mac)
 
-The image runs natively on Apple Silicon (arm64 variant). What has to be in place:
+What has to be in place:
 
-1. **Docker** (Docker Desktop, OrbStack or Colima). The image is public on GHCR,
-   no login needed.
-2. **A site directory**, mounted as `/site`:
-   ```
-   acme/
-     site.yml                    # deploy_server.connection: ssh (default)
-     group_vars/all/vault.yml    # ansible-vault: passwords, Manager key, BMC credentials
-     keys/deploy_server          # SSH private keys (chmod 600): deploy_server.ssh_private_key
-     keys/hvm_hosts              #   and defaults.hvm_ssh_private_key (may be one file)
-     .vault_pass                 # optional, else --ask-vault-pass
-   ```
+1. **Docker or Podman** (Docker Desktop, OrbStack or Colima on a Mac) and
+   **ansible-navigator** (`pip install ansible-navigator`, Python 3.10+). The image
+   is public on GHCR, no login needed.
+2. **A site directory**, see the [README](../README.md#quick-start) (copy
+   [`sites/example/`](../sites/example/README.md)).
 3. **Network from the client** (outgoing only): SSH (22) to the deploy server and to
    the HVM hosts (directly or via `deploy_server.jump`), HTTPS (443) to the BMCs for
    `platform: redfish`. The client does not need to reach the Manager or the media
    URLs: Manager API calls run from the deploy server, hosts/BMCs fetch the ISOs
    from it.
 4. **The deploy server**: Debian/Ubuntu or RHEL family, the SSH user with
-   passwordless sudo, and the two ISOs at the paths in `site.yml`.
+   passwordless sudo, and the two ISOs at the paths in the site file.
 
-```bash
-docker run --rm -it -v ~/vme-sites/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:0.1.3 \
-  ansible-playbook deploy.yml -i /site/site.yml --ask-vault-pass
-```
-
-No `--network host` on a Mac (it would be Docker's VM, not the Mac). Use
-`preflight.yml` first to check everything without changes.
+Start with `ansible-navigator run preflight.yml`: it checks everything without
+changes.
 
 ## Logs and support bundle
 
-Mount a writable directory as `/logs` (`-v $PWD/logs:/logs`; writable for uid 1000,
-e.g. `chmod a+rwx logs`). Every `ansible-playbook` run writes its whole output to
-`/logs/<date>-<time>-<playbook>.log` (Ansible's `ANSIBLE_LOG_PATH`). Without the
-mount the log stays in the container and is lost; the run says so.
+Every `ansible-playbook` run writes its whole output to
+`logs/<date>-<time>-<playbook>.log` (Ansible's `ANSIBLE_LOG_PATH`; in the container
+`/logs`, mounted by the navigator settings or `-v $PWD/logs:/logs`). Without the
+mount the log stays in the container and is lost; the run says so. Navigator also
+records every run as `logs/<playbook>-<time>.json`: `ansible-navigator replay
+logs/<run>.json` steps through it host by host, task by task.
 
-With `-e VME_STACK_DEBUG=1`:
+With `VME_STACK_DEBUG=1` (`VME_STACK_DEBUG=1 ansible-navigator run ...`; plain
+Docker: `-e VME_STACK_DEBUG=1`):
 
 - the run is verbose (`-vvv`, also SSH details);
 - afterwards, also after a failure, `collect.yml` runs with the same inventory,
@@ -161,8 +168,7 @@ sending if in doubt; nothing is sent anywhere automatically.
 The bundle on its own, e.g. later for a running system:
 
 ```bash
-docker run --rm -it -v ~/vme-sites/acme:/site:ro -v $PWD/logs:/logs ghcr.io/kosmolito/vme-stack-ee:0.1.3 \
-  ansible-playbook collect.yml -i /site/site.yml --ask-vault-pass
+cd sites/acme && ansible-navigator run collect.yml
 ```
 
 Without the container (Ansible installed): `python3 tools/vme_stack_run.py
@@ -185,6 +191,9 @@ docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.
 vi /srv/vme-stack/hotfix/roles/...                                                       # fix
 docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.3 ansible-playbook ...
 ```
+
+With navigator, add the mount to `volume-mounts` in `ansible-navigator.yml`:
+`- {src: /srv/vme-stack/hotfix, dest: /vme-stack-hotfix}`.
 
 Every run prints which code it uses, e.g.
 `vme-stack 0.1.0: using HOTFIX code from /vme-stack-hotfix (based on 0.1.0)`.

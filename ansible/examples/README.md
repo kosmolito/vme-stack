@@ -15,13 +15,18 @@ Both need:
 - a **deploy server** (Ubuntu/Debian or RHEL family) on the mgmt network, an SSH user
   with passwordless sudo, and HPE's two ISOs at the paths in `media`
 - an **NFS export** for the cluster (`vme_clusters[].datastores`)
-- a site directory, copied from the example:
+- ansible-navigator and Docker or Podman on the machine you run from
+- a site directory, copied from the example, plus `ansible-navigator.yml` from
+  [`sites/example/`](../../sites/example/ansible-navigator.yml):
   ```
   acme/
     site.yml
+    ansible-navigator.yml
     keys/vme-stack               # SSH private key (chmod 600): deploy_server.ssh_private_key and
                                  # defaults.hvm_ssh_private_key (one key for both, or two files)
     group_vars/all/vault.yml     # from vault.example.yml, then: ansible-vault encrypt
+    .vault_pass                  # the vault password (chmod 600)
+    logs/  build/                # empty; runs write here
   ```
 
 Always start with `preflight.yml`: it checks the site file, the deploy server,
@@ -29,8 +34,8 @@ DNS, NTP, the DNS records of the Manager URL and NTP server names (on the site's
 DNS servers) and (bare metal) the BMCs, and changes nothing.
 
 ```bash
-alias vme='docker run --rm -it -v $PWD/acme:/site:ro ghcr.io/kosmolito/vme-stack-ee:0.1.3'
-vme ansible-playbook preflight.yml -i /site/site.yml --ask-vault-pass
+cd acme
+ansible-navigator run preflight.yml
 ```
 
 ## Scenario 1: VMs (`vm/`)
@@ -52,7 +57,7 @@ For a lab or a proof of concept. Per HVM host VM:
 Then:
 
 ```bash
-vme ansible-playbook deploy.yml -i /site/site.yml --ask-vault-pass
+ansible-navigator run deploy.yml
 ```
 
 1. The run builds one ISO per host and prints its URL, e.g.
@@ -89,7 +94,7 @@ Per server:
 Then one run, from powered off (or running anything: it is reinstalled) to cluster:
 
 ```bash
-vme ansible-playbook deploy.yml -i /site/site.yml --ask-vault-pass
+ansible-navigator run deploy.yml
 ```
 
 The pipeline mounts each server's ISO as virtual media, boots it once from it and
