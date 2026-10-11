@@ -9,8 +9,6 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-11
-
 First public release. From empty servers (or VMs) to a working HPE VM Essentials
 environment, driven by one site file; tested end to end with VME 9.0.2 (8.1.1 also
 supported) in a lab of Proxmox VMs, about 45 minutes from empty hosts to cluster.
