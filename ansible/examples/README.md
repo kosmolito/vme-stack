@@ -15,7 +15,8 @@ Both need:
 - a **deploy server** (Ubuntu/Debian or RHEL family) on the mgmt network, an SSH user
   with passwordless sudo, and HPE's two ISOs at the paths in its `media` (`hvm_iso_path`, `vme_iso_path`)
 - an **NFS export** for the cluster (`vme_clusters[].datastores`)
-- ansible-navigator and Docker or Podman on the machine you run from
+- ansible-navigator and Docker on the machine you run from (Podman: `container-engine: podman`
+  in `ansible-navigator.yml`)
 - a site directory, copied from the example, plus `ansible-navigator.yml` from
   [`sites/example/`](../../sites/example/ansible-navigator.yml):
   ```

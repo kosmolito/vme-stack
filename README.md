@@ -23,7 +23,8 @@ cluster. Secrets (passwords, keys) live in an Ansible Vault file next to it.
 
 ## Quick start
 
-You need Docker or Podman, [ansible-navigator](https://ansible.readthedocs.io/projects/navigator/)
+You need Docker (or Podman: set `container-engine: podman` in the site's
+`ansible-navigator.yml`), [ansible-navigator](https://ansible.readthedocs.io/projects/navigator/)
 (`pip install ansible-navigator`), and a **site directory**: everything about one
 site in one folder. The container image (`ghcr.io/kosmolito/vme-stack-ee`) brings
 the code and all tools; navigator runs it with this folder mounted.

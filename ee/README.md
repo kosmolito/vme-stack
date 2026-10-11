@@ -113,7 +113,8 @@ docker run --rm -it -v $PWD:/site:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-s
 
 What has to be in place:
 
-1. **Docker or Podman** (Docker Desktop, OrbStack or Colima on a Mac) and
+1. **Docker** (Docker Desktop, OrbStack or Colima on a Mac; Podman works too with
+   `container-engine: podman` in `ansible-navigator.yml`) and
    **ansible-navigator** (`pip install ansible-navigator`, Python 3.10+). The image
    is public on GHCR, no login needed.
 2. **A site directory**, see the [README](../README.md#quick-start) (copy

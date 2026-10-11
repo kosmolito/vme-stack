@@ -13,6 +13,9 @@
 # are found. Sites use sites/example/ansible-navigator.yml instead.
 ansible-navigator:
   execution-environment:
+    # Explicit: with auto (the default) navigator takes podman whenever it is
+    # installed, also when Docker is the engine actually in use. Podman: podman.
+    container-engine: docker
     image: ghcr.io/kosmolito/vme-stack-ee:latest
     pull:
       policy: tag                     # latest: pulled again when a newer one is published

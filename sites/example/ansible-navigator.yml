@@ -8,7 +8,7 @@
 #   ansible-navigator run collect.yml            # support bundle only
 #   ansible-navigator replay logs/<run>.json     # step through a past run
 #   ansible-navigator exec -- bash               # shell in the container
-# Needs Docker or Podman and `pip install ansible-navigator`; setup: README.md.
+# Needs Docker (Podman: container-engine below) and `pip install ansible-navigator`; setup: README.md.
 # Paths are relative to this directory. In the container this directory is /site
 # (read-only), logs/ is /logs and build/ keeps rendered seeds and ISO URLs.
 ansible-navigator:
@@ -20,6 +20,9 @@ ansible-navigator:
     # cannot prompt while it records the run).
     cmdline: "--vault-password-file /site/.vault_pass"
   execution-environment:
+    # Explicit: with auto (the default) navigator takes podman whenever it is
+    # installed, also when Docker is the engine actually in use. Podman: podman.
+    container-engine: docker
     image: ghcr.io/kosmolito/vme-stack-ee:latest   # or a version, e.g. :0.1.4, to stay on it
     pull:
       policy: tag                       # latest: pulled again when a newer one is published

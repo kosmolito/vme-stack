@@ -9,6 +9,12 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- The navigator settings (`sites/example/ansible-navigator.yml`, the repository's
+  `ansible-navigator.yaml`) set `container-engine: docker`: with `auto` (also the
+  default when it is missing) navigator takes podman whenever podman is installed,
+  even when Docker is the engine in use, and the run fails. Podman users set
+  `container-engine: podman`.
+
 ## [0.1.5] - 2026-10-11
 
 - `ansible-navigator.yaml` in the repository root, for working on vme-stack: runs
