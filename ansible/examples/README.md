@@ -19,7 +19,8 @@ Both need:
   ```
   acme/
     site.yml
-    vme_stack                    # SSH key for the deploy server and the hosts (chmod 600)
+    keys/vme-stack               # SSH private key (chmod 600): deploy_server.ssh_private_key and
+                                 # defaults.hvm_ssh_private_key (one key for both, or two files)
     group_vars/all/vault.yml     # from vault.example.yml, then: ansible-vault encrypt
   ```
 

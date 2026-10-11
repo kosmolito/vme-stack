@@ -1,6 +1,7 @@
 # Reference site: every setting of the site file, with what it does. Copy this
 # directory to start a site, then delete what you do not need (README.md).
 # Schema: ansible/schemas/site.schema.json. Values marked "default" can be left out.
+# Simpler starting points: ansible/examples/vm and ansible/examples/baremetal.
 #
 # Values are plain Ansible: literal, or a template Ansible resolves when the value
 # is used. For secrets (lines marked "secret") a vault reference is recommended,
@@ -8,7 +9,6 @@
 # "{{ vault_name.field }}". The vault is group_vars/all/vault.yml next to this
 # file (ansible-vault encrypted, template: vault.example.yml). A literal password
 # works too, but then it sits unencrypted in this file.
-# Simpler starting points: ansible/examples/vm and ansible/examples/baremetal.
 #
 # This site: five HVM hosts on the mgmt network 10.30.0.0/24 (VLAN 100), two
 # clusters in the Manager, plus an existing vCenter shown next to them.
@@ -38,23 +38,22 @@ network:                              # the mgmt network all hosts share
 deploy_server:                        # builds and serves the ISOs; DNS/NTP/SSH probes run from here
   name: deploy                        # default; inventory name
   address: 10.30.0.5                  # hosts and BMCs fetch media from here; Ansible connects to it
-  user: vmestack                      # SSH user with passwordless sudo (connection ssh)
+  user: deploy                        # an existing login with passwordless sudo (connection ssh)
+  ssh_private_key: keys/deploy_server # its private key, a file on the controller (relative to this file)
+  # jump: admin@bastion.example.com   # SSH jump host to the deploy server and the HVM hosts (with the key above)
   port: 8080                          # default; nginx
   www_root: /srv/vme-stack/www        # default; ISOs in <www_root>/isos/
   work_dir: /srv/vme-stack/work       # default; scratch space for ISO builds
   # media_url: https://media.example.com   # if hosts/BMCs fetch media through another URL
-  connection: ssh                     # default; local = the playbook runs on the deploy server itself
-
-access:                               # how the controller (where the playbook/EE runs) reaches everything
-  ssh_private_key: vme_stack          # a file path (relative to this file), not a vault reference; never commit it
-  # jump: admin@bastion.example.com   # SSH jump host to the deploy server and the hosts, if needed
+  connection: ssh                     # default; local = Ansible installed on the deploy server itself (not from the container)
 
 defaults:                             # every host gets these unless it sets its own
   platform: redfish                   # redfish (iLO/iDRAC virtual media) | manual (you boot the ISO URL)
   hvm_admin_user: hvmadmin            # default; the hosts' admin user, created by the install (key login + sudo)
   hvm_admin_password: "{{ vault_hvm_admin_password }}"   # secret; the Manager logs in with it (needed by vme_clusters)
-  ssh_keys:                           # public keys for hvm_admin_user (the first matches access.ssh_private_key)
-    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx vme-stack"
+  hvm_ssh_private_key: keys/hvm_hosts # the controller's key for hvm_admin_user (a file); its public key is installed
+  hvm_ssh_keys:                       # optional: extra public keys for hvm_admin_user, e.g. administrators'
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx admin@example.com"
   boot_disk: auto                     # default: the smallest disk; or /dev/sda, or match keys (see hosts)
   nic_layout: dedicated               # default; dedicated: bond0 = mgmt, bond1 = compute | shared: bond0 only
 
@@ -92,8 +91,7 @@ hosts:
   - name: hvm04                       # a VM: you attach and boot the ISO URL the run prints
     ip: 10.30.0.24
     platform: manual                  # per host; overrides defaults.platform (no bmc then)
-    hvm_admin_user: hvmadmin          # hvm_admin_user, hvm_admin_password, ssh_keys, boot_disk: per host too
-
+    hvm_admin_user: hvmadmin          # hvm_admin_user, hvm_admin_password, hvm_ssh_*, boot_disk: per host too
     nics:
       layout: shared                  # bond0 carries mgmt (untagged: native VLAN) and VM traffic
       mgmt: ["00:50:56:00:30:24"]

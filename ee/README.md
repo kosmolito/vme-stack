@@ -67,12 +67,12 @@ tag arrives:
 ## Run
 
 Mount the site directory as `/site`. Paths inside the site file are relative to
-it, e.g. `ssh_private_key: ../../vme_stack` resolves to `/vme_stack`.
+it, e.g. `ssh_private_key: ../../keys/deploy_server` resolves to `/keys/deploy_server`.
 
 ```bash
 docker run --rm -it --network host \
   -v /srv/vme-stack/sites/acme:/site:ro \
-  -v /srv/vme-stack/keys/vme_stack:/vme_stack:ro \
+  -v /srv/vme-stack/keys:/keys:ro \
   vme-stack-ee:0.1.1 \
   ansible-playbook deploy.yml -i /site/site.yml --vault-password-file /site/.vault_pass
 ```
@@ -101,11 +101,12 @@ The image runs natively on Apple Silicon (arm64 variant). What has to be in plac
    acme/
      site.yml                    # deploy_server.connection: ssh (default)
      group_vars/all/vault.yml    # ansible-vault: passwords, Manager key, BMC credentials
-     vme_stack                   # SSH private key (chmod 600); site.yml: ssh_private_key: vme_stack
+     keys/deploy_server          # SSH private keys (chmod 600): deploy_server.ssh_private_key
+     keys/hvm_hosts              #   and defaults.hvm_ssh_private_key (may be one file)
      .vault_pass                 # optional, else --ask-vault-pass
    ```
 3. **Network from the client** (outgoing only): SSH (22) to the deploy server and to
-   the HVM hosts (directly or via `access.jump`), HTTPS (443) to the BMCs for
+   the HVM hosts (directly or via `deploy_server.jump`), HTTPS (443) to the BMCs for
    `platform: redfish`. The client does not need to reach the Manager or the media
    URLs: Manager API calls run from the deploy server, hosts/BMCs fetch the ISOs
    from it.

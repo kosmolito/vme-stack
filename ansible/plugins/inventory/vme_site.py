@@ -31,7 +31,9 @@ from ansible.plugins.inventory import BaseInventoryPlugin
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas" / "site.schema.json"
 
 # Defaults the schema documents; applied here so roles get one value per variable.
-DEFAULTS = {"hvm_admin_user": "hvmadmin", "boot_disk": "auto", "nic_layout": "dedicated"}
+DEFAULTS = {"hvm_admin_user": "hvmadmin", "hvm_ssh_keys": [], "boot_disk": "auto", "nic_layout": "dedicated"}
+# Per-host overrides of defaults that have no default value.
+HOST_OVERRIDES = ("platform", "hvm_ssh_private_key", "hvm_admin_password")
 DEPLOY_DEFAULTS = {"name": "deploy", "www_root": "/srv/vme-stack/www", "work_dir": "/srv/vme-stack/work", "port": 8080}
 SSH_OPTS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30"
 
@@ -84,8 +86,11 @@ class InventoryModule(BaseInventoryPlugin):
         self._validate(site, path)
 
         base = os.path.dirname(os.path.abspath(path))
-        access = site["access"]
-        key = os.path.normpath(os.path.join(base, os.path.expanduser(access["ssh_private_key"])))
+
+        def key_file(p):
+            # Key files are on the controller; relative paths are relative to the site file.
+            return os.path.normpath(os.path.join(base, os.path.expanduser(p)))
+
         net = site["network"]
         dep = {**DEPLOY_DEFAULTS, **site["deploy_server"]}
 
@@ -94,11 +99,14 @@ class InventoryModule(BaseInventoryPlugin):
         if dupes:
             raise AnsibleParserError(f"{path}: names used more than once (hosts/deploy_server): {', '.join(dupes)}")
 
-        conn = {"ansible_ssh_private_key_file": key}
-        if access.get("jump"):
+        # The jump host (if any) is reached with the deploy server's key, for the
+        # deploy server and the HVM hosts alike.
+        dep_key = key_file(dep["ssh_private_key"]) if dep.get("ssh_private_key") else None
+        conn = {}
+        if dep.get("jump"):
             conn["ansible_ssh_common_args"] = (
-                f'{SSH_OPTS} -o ServerAliveCountMax=6 -o ProxyCommand="ssh {SSH_OPTS} -i {key} '
-                f'-o IdentitiesOnly=yes -W %h:%p {access["jump"]}"'
+                f'{SSH_OPTS} -o ServerAliveCountMax=6 -o ProxyCommand="ssh {SSH_OPTS} -i {dep_key} '
+                f'-o IdentitiesOnly=yes -W %h:%p {dep["jump"]}"'
             )
 
         self.inventory.add_group("hvm")
@@ -204,7 +212,12 @@ class InventoryModule(BaseInventoryPlugin):
             # The playbook runs on the deploy server itself.
             dep_vars = {"ansible_connection": "local", "ansible_host": dep["address"]}
         else:
-            dep_vars = {**conn, "ansible_host": dep["address"], "ansible_user": dep["user"]}
+            dep_vars = {
+                **conn,
+                "ansible_ssh_private_key_file": dep_key,
+                "ansible_host": dep["address"],
+                "ansible_user": dep["user"],
+            }
         for k, v in dep_vars.items():
             self.inventory.set_variable(dep["name"], k, v)
 
@@ -212,19 +225,21 @@ class InventoryModule(BaseInventoryPlugin):
             s = {
                 **DEFAULTS,
                 **site["defaults"],
-                **{k: v for k, v in h.items() if k in DEFAULTS or k in ("platform", "ssh_keys", "hvm_admin_password")},
+                **{k: v for k, v in h.items() if k in DEFAULTS or k in HOST_OVERRIDES},
             }
             secret_refs = {}
             if "hvm_admin_password" in s:
                 secret_refs["hvm_admin_password"] = s["hvm_admin_password"]
             hv = {
                 **conn,
+                "ansible_ssh_private_key_file": key_file(s["hvm_ssh_private_key"]),
                 "ansible_host": h["ip"],
                 "ansible_user": s["hvm_admin_user"],
                 "platform": s["platform"],
                 "admin_user": s["hvm_admin_user"],
                 "admin_password": _secret(s.get("hvm_admin_password")),
-                "ssh_keys": s["ssh_keys"],
+                # Extra keys; preflight adds the one derived from the private key (ssh_keys).
+                "hvm_ssh_keys": s["hvm_ssh_keys"],
                 "boot_disk": s["boot_disk"],
                 "ip": h["ip"],
                 "prefix": net["prefix"],

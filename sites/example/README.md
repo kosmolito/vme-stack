@@ -11,14 +11,16 @@ and look things up here.
 ```
 sites/acme/                       # anywhere; sites/ is gitignored in this repository
   site.yml                        # from site.yml here, trimmed to your site
-  vme_stack                       # SSH private key (chmod 600), access.ssh_private_key
+  keys/deploy_server              # your login's key on the deploy server (chmod 600)
+  keys/hvm_hosts                  # key for the hosts' admin user (chmod 600), created below
   group_vars/all/vault.yml        # from vault.example.yml, then: ansible-vault encrypt
   .vault_pass                     # optional, for --vault-password-file
 ```
 
 ```bash
 cp -r sites/example sites/acme && cd sites/acme
-ssh-keygen -t ed25519 -N '' -C vme-stack -f vme_stack     # public key -> defaults.ssh_keys
+mkdir -p keys && cp ~/.ssh/<deploy server key> keys/deploy_server
+ssh-keygen -t ed25519 -N '' -C vme-stack -f keys/hvm_hosts   # installed on the hosts by the run
 mkdir -p group_vars/all && mv vault.example.yml group_vars/all/vault.yml
 $EDITOR site.yml group_vars/all/vault.yml
 ansible-vault encrypt group_vars/all/vault.yml

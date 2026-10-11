@@ -11,7 +11,6 @@
     "media",
     "network",
     "deploy_server",
-    "access",
     "defaults",
     "hosts"
   ],
@@ -151,9 +150,19 @@
           "minLength": 1
         },
         "user": {
-          "description": "SSH user with passwordless sudo (connection ssh). With connection local the playbook's own user is used and needs passwordless sudo.",
+          "description": "Login on the deploy server for connection ssh, with passwordless sudo (an existing account, e.g. created by whoever set up the server). With connection local the playbook's own user is used and needs passwordless sudo.",
           "type": "string",
           "minLength": 1
+        },
+        "ssh_private_key": {
+          "description": "Private key file on the controller (where the playbook or the EE runs) for user on the deploy server; also used for jump. Relative paths are relative to the site file. Never commit it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "jump": {
+          "description": "Optional SSH jump host (user@host) the controller goes through to reach the deploy server and the HVM hosts, logging in with deploy_server.ssh_private_key. Omit when the controller reaches them directly.",
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_.-]*@[^\\s@]+$"
         },
         "www_root": {
           "description": "Directory nginx serves; ISOs go to <www_root>/isos/.",
@@ -179,7 +188,7 @@
           "pattern": "^https?://[^\\s]+[^/]$"
         },
         "connection": {
-          "description": "How Ansible reaches the deploy server: ssh (default; address + user) or local (the playbook runs on the deploy server itself, e.g. Ansible installed there). address stays the address hosts and BMCs fetch media from. In an EE container use ssh: 'local' would be the container.",
+          "description": "How Ansible reaches the deploy server: ssh (default; address + user + ssh_private_key) or local (Ansible runs directly on the deploy server, without a container). From the EE container always use ssh, also when the container runs on the deploy server itself: 'local' would act inside the container (packages, nginx, ISO mount would land there).",
           "enum": [
             "ssh",
             "local"
@@ -201,38 +210,35 @@
           },
           "else": {
             "required": [
-              "user"
+              "user",
+              "ssh_private_key"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "jump"
+            ]
+          },
+          "then": {
+            "required": [
+              "ssh_private_key"
             ]
           }
         }
       ]
     },
     "access": {
-      "description": "How the controller reaches hosts and hypervisors.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "ssh_private_key"
-      ],
-      "properties": {
-        "ssh_private_key": {
-          "description": "Controller-side private key matching defaults.ssh_keys; also used for the deploy server and the jump host. Relative paths are relative to this file. Never commit it.",
-          "type": "string",
-          "minLength": 1
-        },
-        "jump": {
-          "description": "Optional SSH jump host (user@host) the controller uses to reach the deploy server and the hosts. Omit when the controller reaches them directly.",
-          "type": "string",
-          "pattern": "^[a-z_][a-z0-9_.-]*@[^\\s@]+$"
-        }
-      }
+      "description": "access is replaced: access.ssh_private_key -> deploy_server.ssh_private_key (the deploy server's login) and defaults.hvm_ssh_private_key (the HVM hosts' login; both may name the same file); access.jump -> deploy_server.jump.",
+      "not": {}
     },
     "defaults": {
       "description": "Per-host settings; any host can override them (except nic_layout, which hosts set as nics.layout).",
       "$ref": "#/$defs/host_settings",
       "required": [
         "platform",
-        "ssh_keys"
+        "hvm_ssh_private_key"
       ],
       "unevaluatedProperties": false
     },
@@ -595,14 +601,19 @@
           "pattern": "^[a-z_][a-z0-9_-]{0,31}$",
           "default": "hvmadmin"
         },
-        "ssh_keys": {
+        "hvm_ssh_private_key": {
+          "description": "Private key file on the controller for hvm_admin_user on the HVM hosts. Its public key is installed for that user automatically (derived at preflight). Relative paths are relative to the site file; may be the same file as deploy_server.ssh_private_key. Never commit it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "hvm_ssh_keys": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "string",
             "pattern": "^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/=]+( .*)?$",
             "description": "OpenSSH public key line (ssh-ed25519, ssh-rsa or ecdsa)."
-          }
+          },
+          "description": "Extra public keys for hvm_admin_user (e.g. administrators' own keys), next to the one derived from hvm_ssh_private_key."
         },
         "boot_disk": {
           "description": "Disk the OS is installed on (LVM over the whole disk). 'auto' = the smallest disk (the installer skips its own media), a kernel device name such as /dev/sda, or installer match keys: all given keys must match. serial/model/vendor are glob patterns on the udev values ID_SERIAL/ID_MODEL/ID_VENDOR. ID_SERIAL is the /dev/disk/by-id/ name without its bus prefix (nvme-, ata-, scsi-): model + serial for NVMe/SATA, but often the WWN for SAS disks and RAID logical drives, so take it from by-id, not from the drive label. For a boot device, model is usually the simplest. No /dev/disk/by-* paths: the installer's path match only sees kernel names such as /dev/sda, which can change between boots on servers with several controllers; model/serial/id_path are stable.",
@@ -675,6 +686,10 @@
         },
         "admin_password": {
           "description": "admin_password is renamed hvm_admin_password, and takes a vault reference: hvm_admin_password: \"{{ vault_hvm_admin_password }}\".",
+          "not": {}
+        },
+        "ssh_keys": {
+          "description": "ssh_keys is replaced by hvm_ssh_private_key (the controller's key for the hosts; its public key is installed automatically) and hvm_ssh_keys (extra public keys only).",
           "not": {}
         }
       }
@@ -787,6 +802,12 @@
         },
         "hvm_admin_user": {
           "$ref": "#/$defs/host_settings/properties/hvm_admin_user"
+        },
+        "hvm_ssh_private_key": {
+          "$ref": "#/$defs/host_settings/properties/hvm_ssh_private_key"
+        },
+        "hvm_ssh_keys": {
+          "$ref": "#/$defs/host_settings/properties/hvm_ssh_keys"
         },
         "ssh_keys": {
           "$ref": "#/$defs/host_settings/properties/ssh_keys"

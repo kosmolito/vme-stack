@@ -17,9 +17,8 @@ base:
     compute_vlans: [200]
   deploy_server:
     address: 10.0.0.5
-    user: vmestack
-  access:
-    ssh_private_key: vme_stack
+    user: deploy
+    ssh_private_key: keys/vme-stack
   vme_manager:
     host: hvm01
     ip: 10.0.0.30
@@ -45,7 +44,7 @@ base:
   defaults:
     platform: manual
     hvm_admin_password: "{{ vault_hvm_admin }}"
-    ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyExampleKeyExampleKey test"]
+    hvm_ssh_private_key: keys/vme-stack
   hosts:
     - name: hvm01
       ip: 10.0.0.21
@@ -241,6 +240,15 @@ cases:
           bmc: {address: 10.0.1.21, credentials: vault_ilo}
           nics: {mgmt: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"], compute: ["aa:bb:cc:00:00:03", "aa:bb:cc:00:00:04"]}
     expect: bmc.credentials is replaced by bmc.username and bmc.password
+  - name: old access block
+    patch: {access: {ssh_private_key: vme_stack}}
+    expect: "access is replaced: access.ssh_private_key -> deploy_server.ssh_private_key"
+  - name: old ssh_keys
+    patch: {defaults: {ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyExampleKeyExampleKey test"]}}
+    expect: ssh_keys is replaced by hvm_ssh_private_key
+  - name: deploy server without its key
+    patch: {deploy_server: {ssh_private_key: null}}
+    expect: "'ssh_private_key' is a required property"
   - name: old vme_cluster block
     patch: {vme_cluster: {ssh_private_key: vault_mgr_key, ssh_public_key: vault_mgr_pub}}
     expect: Replaced by vme_groups, vme_clouds and vme_clusters

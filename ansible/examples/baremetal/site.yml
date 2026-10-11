@@ -22,10 +22,8 @@ network:
 
 deploy_server:                        # builds + serves ISOs; must reach the BMCs' network too
   address: 10.20.0.5                  # the BMCs fetch the ISOs from http://10.20.0.5:8080
-  user: vmestack
-
-access:
-  ssh_private_key: vme_stack          # next to this file
+  user: deploy                        # an existing login with passwordless sudo
+  ssh_private_key: keys/deploy_server # its private key, on the controller (relative to this file)
 
 vme_manager:
   host: hvm01
@@ -69,7 +67,7 @@ vme_clusters:
 defaults:
   platform: redfish
   hvm_admin_password: "{{ vault_hvm_admin_password }}"
-  ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx vme-stack"]
+  hvm_ssh_private_key: keys/hvm_hosts   # the controller's key for the hosts; its public key is installed
   nic_layout: dedicated
 
 hosts:

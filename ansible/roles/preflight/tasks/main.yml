@@ -19,20 +19,55 @@
 
 # --- Controller -------------------------------------------------------------
 
-- name: Check the SSH private key on the controller
+# Private key files on the controller: the deploy server's login and the HVM
+# hosts' (hvm_ssh_private_key; may be the same file).
+- name: Check the SSH private keys on the controller
   run_once: true
   delegate_to: localhost
   ansible.builtin.stat:
-    path: "{{ ansible_ssh_private_key_file }}"
+    path: "{{ item }}"
+  loop: "{{ controller_keys }}"
   register: ssh_key
+  vars:
+    controller_keys: >-
+      {{ (([hostvars[deploy_host].ansible_ssh_private_key_file] if hostvars[deploy_host].ansible_ssh_private_key_file | default(none) else [])
+          + ansible_play_hosts_all | map('extract', hostvars, 'ansible_ssh_private_key_file') | list) | unique }}
+
+# The HVM hosts get the public key of hvm_ssh_private_key (plus hvm_ssh_keys), so
+# the key the controller logs in with is always installed. A key with a
+# passphrase: ssh-keygen cannot read it unattended, then <key>.pub is used.
+- name: Read the public keys of the HVM hosts' private keys
+  run_once: true
+  delegate_to: localhost
+  ansible.builtin.shell: ssh-keygen -y -f "{{ item }}" </dev/null 2>/dev/null || cat "{{ item }}.pub"
+  loop: "{{ ssh_key.results | selectattr('stat.exists') | map(attribute='item')
+            | select('in', ansible_play_hosts_all | map('extract', hostvars, 'ansible_ssh_private_key_file')) | list }}"
+  register: hvm_pubkeys
+  changed_when: false
+  failed_when: false
 
 - name: Collect controller problems
   run_once: true
   ansible.builtin.set_fact:
     controller_problems: >-
-      {{ ([] if ssh_key.stat.exists else ['SSH private key not found: ' ~ ansible_ssh_private_key_file]) +
-         (['SSH private key ' ~ ansible_ssh_private_key_file ~ ' is readable by others (mode ' ~ ssh_key.stat.mode ~ '); ssh will refuse it. chmod 600 it.']
-           if ssh_key.stat.exists and ssh_key.stat.mode | int(base=8) % 64 != 0 else []) }}
+      {%- set out = [] -%}
+      {%- for k in ssh_key.results -%}
+      {%-   if not k.stat.exists -%}{{ out.append('SSH private key not found: ' ~ k.item) }}
+      {%-   elif k.stat.mode | int(base=8) % 64 != 0 -%}
+      {{-     out.append('SSH private key ' ~ k.item ~ ' is readable by others (mode ' ~ k.stat.mode ~ '); ssh will refuse it. chmod 600 it.') -}}
+      {%-   endif -%}
+      {%- endfor -%}
+      {%- for r in hvm_pubkeys.results if r.rc != 0 or not r.stdout.startswith(('ssh-', 'ecdsa-')) -%}
+      {{-   out.append('cannot read the public key of ' ~ r.item ~ ' (a key with a passphrase needs ' ~ r.item ~ '.pub next to it)') -}}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Public keys for the admin user (derived + hvm_ssh_keys)
+  ansible.builtin.set_fact:
+    ssh_keys: >-
+      {{ (hvm_pubkeys.results | selectattr('item', 'equalto', ansible_ssh_private_key_file)
+          | selectattr('rc', 'equalto', 0) | map(attribute='stdout') | map('trim') | list
+          + hvm_ssh_keys) | unique }}
 
 # --- Deploy server (builds and serves the ISOs) -----------------------------
 

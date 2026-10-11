@@ -9,6 +9,17 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **Site file change: SSH keys per login.** `access` is gone. The deploy server's
+  login is `deploy_server.user` + `deploy_server.ssh_private_key`; the HVM hosts'
+  is `hvm_admin_user` + `defaults.hvm_ssh_private_key` (both may name the same
+  file). The jump host moves to `deploy_server.jump` and uses the deploy server's
+  key. `ssh_keys` is replaced: the public key of `hvm_ssh_private_key` is now
+  derived at preflight and installed for the admin user, so it always matches;
+  `hvm_ssh_keys` only adds extra keys (e.g. administrators'). Old keys fail the
+  schema check with the new form.
+- `deploy_server.connection: local` is for Ansible installed on the deploy server
+  itself; from the container always use `ssh` (the docs now say so).
+
 ## [0.1.1] - 2026-10-11
 
 - **Site file change: secrets are plain Ansible values.** A secret field holds the

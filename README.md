@@ -30,10 +30,13 @@ and a site directory:
 sites/acme/
   site.yml                    # the site, from an example (see below)
   group_vars/all/vault.yml    # secrets, encrypted with ansible-vault
-  vme_stack                   # SSH key for the deploy server and the hosts
+  keys/deploy_server          # SSH key of your login on the deploy server
+  keys/hvm_hosts              # SSH key vme-stack installs for the hosts' admin user
 ```
 
-In `site.yml`, point to the key relative to the file: `access.ssh_private_key: vme_stack`.
+In `site.yml`, point to the keys relative to the file: `deploy_server.ssh_private_key:
+keys/deploy_server` and `defaults.hvm_ssh_private_key: keys/hvm_hosts` (one file for
+both works too).
 
 Check everything first (changes nothing), then deploy:
 

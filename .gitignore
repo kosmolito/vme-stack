@@ -30,6 +30,7 @@ vault-password*
 # --- SSH keys ----------------------------------------------------------------
 vme_stack
 vme_stack.pub
+keys/
 *.pem
 id_*
 
