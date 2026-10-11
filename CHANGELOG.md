@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-11
+
 - **SSH key `~/.ssh/id_ed25519` by default** (`ansible.cfg` `private_key_file`), for
   the deploy server and the HVM hosts: `ansible_ssh_private_key_file` is optional
   now. ansible-navigator mounts your `~/.ssh` into the container itself (at
