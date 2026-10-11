@@ -35,8 +35,6 @@ sites/acme/
   ansible-navigator.yml       # how to run it: image, mounts (from sites/example/)
   group_vars/all/vault.yml    # secrets, encrypted with ansible-vault
   .vault_pass                 # vault password (chmod 600), or ask each run
-  keys/deploy_server          # SSH key of your login on the deploy server
-  keys/hvm_hosts              # SSH key vme-stack installs for the hosts' admin user
   logs/                       # run logs, run records, support bundles (written by runs)
   build/                      # rendered seeds and ISO URLs (written by runs)
 ```
@@ -46,10 +44,12 @@ the deploy server in group `deploy_server`, the HVM hosts in group `hvm` (with
 their defaults as group vars), the Manager's host in group `vme_manager`. Every
 setting, commented: [`sites/example/site.yml`](sites/example/site.yml).
 
-**Keys belong in the site directory.** Point to them from the inventory:
-`ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy_server"` for the
-deploy server and `".../keys/hvm_hosts"` for group `hvm` (one file for both works
-too). The container sees only the site directory, so a key elsewhere is not found.
+**SSH key: `~/.ssh/id_ed25519` by default**, for the deploy server login and the
+hosts' admin user alike (its public key is installed on the hosts). It stays in
+your `~/.ssh`: ansible-navigator mounts that into the container, where it is
+`~/.ssh` as well. For another key set `ansible_ssh_private_key_file` in the
+inventory, e.g. `~/.ssh/acme_deploy`, or a key kept in the site directory:
+`"{{ inventory_dir }}/keys/..."`.
 
 Set it up from the reference site ([`sites/example/README.md`](sites/example/README.md)
 has the details), then check everything (changes nothing) and deploy:

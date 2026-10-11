@@ -9,6 +9,14 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **SSH key `~/.ssh/id_ed25519` by default** (`ansible.cfg` `private_key_file`), for
+  the deploy server and the HVM hosts: `ansible_ssh_private_key_file` is optional
+  now. ansible-navigator mounts your `~/.ssh` into the container itself (at
+  `/home/runner/.ssh`); the image links it as `~/.ssh`, so `~/.ssh/...` means the
+  same as on your machine and keys stay in `~/.ssh`, not in site directories
+  (plain Docker: `-v ~/.ssh:/home/runner/.ssh:ro`). Keys in the site directory
+  (`"{{ inventory_dir }}/keys/..."`) keep working.
+
 - A site can be split the usual Ansible way (an INI inventory plus `group_vars/`
   and `host_vars/`); `sites/example/README.md` shows it. The site checks
   (`tests/check_sites.py`) and the support bundle now take the whole site

@@ -62,7 +62,7 @@ all:
         deploy:
           ansible_host: 10.20.0.5     # the BMCs fetch the ISOs from http://10.20.0.5:8080
           ansible_user: deploy        # an existing login with passwordless sudo
-          ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy_server"   # its key, in the site directory
+          ansible_ssh_private_key_file: ~/.ssh/acme_deploy   # its key; without this line ~/.ssh/id_ed25519
           media:                      # ISOs on this server; it builds and serves the install media
             hvm_iso_path: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso
             vme_iso_path: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso
@@ -71,7 +71,7 @@ all:
       vars:
         platform: redfish
         ansible_user: hvmadmin        # the hosts' admin user, created by the install
-        ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/hvm_hosts"   # its key; the public key is installed
+        ansible_ssh_private_key_file: ~/.ssh/acme_hvm      # its key, the public key is installed; default ~/.ssh/id_ed25519
         hvm_admin_password: "{{ vault_hvm_admin_password }}"
         nic_layout: dedicated
       hosts:

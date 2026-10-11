@@ -44,8 +44,8 @@ all:
       hosts:
         deploy:
           ansible_host: 192.168.50.5
-          ansible_user: deploy        # an existing login with passwordless sudo
-          ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/vme-stack"   # its key, in the site directory
+          ansible_user: deploy        # an existing login with passwordless sudo and your
+                                      # key (~/.ssh/id_ed25519, the default; ansible_ssh_private_key_file for another)
           media:                      # ISOs on this server; it builds and serves the install media
             hvm_iso_path: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso
             vme_iso_path: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso
@@ -57,7 +57,6 @@ all:
       vars:
         platform: manual
         ansible_user: hvmadmin        # the hosts' admin user, created by the install
-        ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/vme-stack"   # here the same key; its public key is installed
         hvm_admin_password: "{{ vault_hvm_admin_password }}"   # the Manager logs in with it to build the cluster
         nic_layout: dedicated
       hosts:

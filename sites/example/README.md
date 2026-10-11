@@ -15,22 +15,22 @@ into it:
 sites/acme/                       # anywhere; sites/ is gitignored in this repository
   site.yml                        # from site.yml here, trimmed to your site (any name ending in .yml)
   ansible-navigator.yml           # how to run it (from here; names site.yml as /site/site.yml)
-  keys/deploy_server              # your login's key on the deploy server (chmod 600)
-  keys/hvm_hosts                  # key for the hosts' admin user (chmod 600), created below
   group_vars/all/vault.yml        # from vault.example.yml, then: ansible-vault encrypt
   .vault_pass                     # the vault password (chmod 600)
   logs/                           # run logs, run records (.json), support bundles
   build/                          # rendered seeds and ISO URLs
 ```
 
-Keys live here; the inventory points to them with `"{{ inventory_dir }}/keys/..."`:
-the container only sees this directory (as `/site`).
+SSH key: `~/.ssh/id_ed25519` unless the inventory sets `ansible_ssh_private_key_file`
+(the example does, to show it). ansible-navigator mounts your `~/.ssh` into the
+container, so the key stays where it is. Keys kept in the site directory work as
+well: `"{{ inventory_dir }}/keys/..."` (the container sees the site directory as
+`/site`).
 
 ```bash
 cp -r sites/example sites/acme && cd sites/acme
-mkdir -p keys logs build
-cp ~/.ssh/<deploy server key> keys/deploy_server && chmod 600 keys/deploy_server
-ssh-keygen -t ed25519 -N '' -C vme-stack -f keys/hvm_hosts   # installed on the hosts by the run
+mkdir -p logs build
+test -f ~/.ssh/id_ed25519 || ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519   # the default key
 mkdir -p group_vars/all && mv vault.example.yml group_vars/all/vault.yml
 $EDITOR site.yml group_vars/all/vault.yml
 touch .vault_pass && chmod 600 .vault_pass && $EDITOR .vault_pass   # one line: the vault password
@@ -38,7 +38,7 @@ ansible-vault encrypt group_vars/all/vault.yml --vault-password-file .vault_pass
 ```
 
 Keep site directories out of this public repository: in a private repository (add
-`.vault_pass`, `keys/`, `logs/`, `build/` to its `.gitignore`) or on the deploy
+`.vault_pass`, `logs/`, `build/` and any `keys/` to its `.gitignore`) or on the deploy
 server. Then check and run:
 
 ```bash

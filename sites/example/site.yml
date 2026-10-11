@@ -100,7 +100,7 @@ all:
         deploy:                       # any name
           ansible_host: 10.30.0.5     # hosts and BMCs fetch media from here; Ansible connects to it
           ansible_user: deploy        # an existing login with passwordless sudo
-          ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/deploy_server"   # its key, in the site directory
+          ansible_ssh_private_key_file: ~/.ssh/id_ed25519   # default; its key (or "{{ inventory_dir }}/keys/..." in the site directory)
           media:                      # what this server builds and serves; paths on it
             hvm_iso_path: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso   # stock HVM install ISO
             vme_iso_path: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso   # Manager image; needed with vme_manager
@@ -115,7 +115,7 @@ all:
       vars:                           # defaults for every HVM host; any host can set its own
         platform: redfish             # redfish (iLO/iDRAC virtual media) | manual (you boot the ISO URL)
         ansible_user: hvmadmin        # the hosts' admin user, created by the install (key login + sudo)
-        ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/hvm_hosts"   # its key; the public key is installed
+        ansible_ssh_private_key_file: ~/.ssh/id_ed25519   # default; its public key is installed for ansible_user
         hvm_admin_password: "{{ vault_hvm_admin_password }}"   # secret; the Manager logs in with it (needed by vme_clusters)
         hvm_ssh_keys:                 # optional: extra public keys for the admin user, e.g. administrators'
           - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx admin@example.com"

@@ -21,6 +21,7 @@ Exit code: the playbook's.
 import datetime
 import getpass
 import os
+import pwd
 import subprocess
 import sys
 import tempfile
@@ -70,7 +71,23 @@ def forwarded(args):
     return out
 
 
+def link_mounted_ssh():
+    """ansible-navigator mounts the user's ~/.ssh at /home/runner/.ssh (plain Docker:
+    -v ~/.ssh:/home/runner/.ssh:ro); link it as this user's ~/.ssh, so ~/.ssh/id_ed25519
+    (ansible.cfg's default key) means the same as on the user's machine. Here, after
+    the image's own entrypoint, the home directory is known (not yet in ours)."""
+    mounted = Path("/home/runner/.ssh")
+    home = Path(os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir)
+    link = home / ".ssh"
+    if mounted.is_dir() and home != mounted.parent and not link.exists() and not link.is_symlink():
+        try:
+            link.symlink_to(mounted)
+        except OSError:
+            pass
+
+
 def main(argv):
+    link_mounted_ssh()
     if not argv or Path(argv[0]).name != "ansible-playbook":
         if not argv:
             argv = ["bash"]

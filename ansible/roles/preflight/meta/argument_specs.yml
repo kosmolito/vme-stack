@@ -116,7 +116,7 @@ argument_specs:
       platform: {type: str, required: true, choices: [manual, redfish], description: "How the host boots its ISO."}
       ansible_host: {type: str, required: true, description: The host's static IP on the mgmt network.}
       ansible_user: {type: str, required: true, description: The admin user the install creates.}
-      ansible_ssh_private_key_file: {type: str, required: true, description: "Its key; the public key is installed."}
+      ansible_ssh_private_key_file: {type: str, description: "Its key (default ~/.ssh/id_ed25519, ansible.cfg); the public key is installed."}
       hvm_admin_password: {type: str, no_log: true, description: Password of the admin user; needed by vme_clusters.}
       hvm_ssh_keys: {type: list, elements: str, description: Extra public keys for the admin user.}
       boot_disk: {type: raw, description: "auto, a kernel name (/dev/sda) or installer match keys."}

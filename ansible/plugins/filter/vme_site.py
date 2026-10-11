@@ -195,11 +195,8 @@ def vme_site_errors(site, roles_dir):
     if len(site["deploy"]) != 1:
         errs.append(f"group deploy_server needs exactly one host (has {len(site['deploy'])})")
     for d in site["deploy"]:
-        if not d["local"] and not (d["user"] and d["key"]):
-            errs.append(
-                f"deploy server {d['name']}: needs ansible_user and ansible_ssh_private_key_file "
-                "(or ansible_connection: local)"
-            )
+        if not d["local"] and not d["user"]:
+            errs.append(f"deploy server {d['name']}: needs ansible_user (or ansible_connection: local)")
     if not hosts:
         errs.append("group hvm has no hosts")
 

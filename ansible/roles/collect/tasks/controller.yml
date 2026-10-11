@@ -75,7 +75,7 @@
       {%   endfor %}
       {% endfor %}
   vars:
-    inventory_keys: [ansible_host, ansible_user, ansible_connection, ansible_ssh_private_key_file, platform, admin_user, host_nic_layout, hpe_vm,
+    inventory_keys: [ansible_host, ansible_user, ansible_connection, ssh_key_file, platform, admin_user, host_nic_layout, hpe_vm,
                      ip, prefix, gateway, dns, ntp_servers, domain, mgmt_vlan, timezone, bond_mode, proxy, nics, netplan,
                      mgmt_interface, compute_interface, boot_disk, storage, bmc, hvm_ssh_keys, media_url, seed_mode,
                      hvm_src_iso, deploy_host, probe_from]

@@ -19,6 +19,8 @@ ansible-navigator:
     image: ghcr.io/kosmolito/vme-stack-ee:latest
     pull:
       policy: tag                     # latest: pulled again when a newer one is published
+    # Your ~/.ssh is mounted by navigator itself (at /home/runner/.ssh; the image
+    # makes it ~/.ssh), so the SSH key stays there: ~/.ssh/id_ed25519 by default.
     volume-mounts:
       - {src: "./ansible", dest: /vme-stack-hotfix}   # this clone's code; also its build/
       - {src: "./logs", dest: /logs}

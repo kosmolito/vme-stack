@@ -206,9 +206,9 @@ cases:
   - name: two deploy servers
     patch: {all: {children: {deploy_server: {hosts: {deploy2: {ansible_host: 10.0.0.6, ansible_user: deploy, ansible_ssh_private_key_file: k}}}}}}
     expect: group deploy_server needs exactly one host (has 2)
-  - name: deploy server without its key
-    patch: {all: {children: {deploy_server: {hosts: {deploy: {ansible_ssh_private_key_file: null}}}}}}
-    expect: needs ansible_user and ansible_ssh_private_key_file
+  - name: deploy server without its login
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {ansible_user: null}}}}}}
+    expect: "deploy server deploy: needs ansible_user"
   - name: Manager settings without its host
     patch: {all: {children: {vme_manager: null}}}
     expect: group vme_manager needs exactly one host

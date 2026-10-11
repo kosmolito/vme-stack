@@ -108,7 +108,7 @@
       {%-   set v = hostvars[d] -%}
       {{-   deploy.append({'name': d, 'address': v.ansible_host | default(d),
                            'local': v.ansible_connection | default('ssh') == 'local',
-                           'user': 'ansible_user' in v, 'key': 'ansible_ssh_private_key_file' in v}) -}}
+                           'user': 'ansible_user' in v}) -}}
       {%- endfor -%}
       {%- set mgr = none -%}
       {%- if vme_manager is defined -%}

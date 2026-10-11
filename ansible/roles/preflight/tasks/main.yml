@@ -16,7 +16,7 @@
 # --- Controller -------------------------------------------------------------
 
 # Private key files on the controller: the deploy server's login and the HVM
-# hosts' (ansible_ssh_private_key_file of each; may be the same file).
+# hosts' (ansible_ssh_private_key_file of each, default ~/.ssh/id_ed25519; may be one file).
 - name: Check the SSH private keys on the controller
   run_once: true
   delegate_to: localhost
@@ -26,10 +26,10 @@
   register: ssh_key
   vars:
     controller_keys: >-
-      {{ (([hostvars[deploy_host].ansible_ssh_private_key_file] if hostvars[deploy_host].ansible_ssh_private_key_file | default(none) else [])
-          + ansible_play_hosts_all | map('extract', hostvars, 'ansible_ssh_private_key_file') | list) | unique }}
+      {{ (([] if hostvars[deploy_host].ansible_connection | default('ssh') == 'local' else [hostvars[deploy_host].ssh_key_file])
+          + ansible_play_hosts_all | map('extract', hostvars, 'ssh_key_file') | list) | unique }}
 
-# The HVM hosts get the public key of their ansible_ssh_private_key_file (plus hvm_ssh_keys), so
+# The HVM hosts get the public key of their key file (ssh_key_file; plus hvm_ssh_keys), so
 # the key the controller logs in with is always installed. A key with a
 # passphrase: ssh-keygen cannot read it unattended, then <key>.pub is used.
 - name: Read the public keys of the HVM hosts' private keys
@@ -37,7 +37,7 @@
   delegate_to: localhost
   ansible.builtin.shell: ssh-keygen -y -f "{{ item }}" </dev/null 2>/dev/null || cat "{{ item }}.pub"
   loop: "{{ ssh_key.results | selectattr('stat.exists') | map(attribute='item')
-            | select('in', ansible_play_hosts_all | map('extract', hostvars, 'ansible_ssh_private_key_file')) | list }}"
+            | select('in', ansible_play_hosts_all | map('extract', hostvars, 'ssh_key_file')) | list }}"
   register: hvm_pubkeys
   changed_when: false
   failed_when: false
@@ -46,8 +46,8 @@
   run_once: true
   vars:
     key_hint: >-
-      {{ ' (keep keys in the site directory, e.g. keys/deploy_server, and write the path relative to the site file;'
-         ~ ' in the container only the site directory is mounted)' }}
+      {{ ' (default ~/.ssh/id_ed25519, else ansible_ssh_private_key_file; in the container only your ~/.ssh'
+         ~ ' (mounted by ansible-navigator) and the site directory are there)' }}
   ansible.builtin.set_fact:
     controller_problems: >-
       {%- set out = [] -%}
@@ -65,7 +65,7 @@
 - name: Public keys for the admin user (derived + hvm_ssh_keys)
   ansible.builtin.set_fact:
     ssh_keys: >-
-      {{ (hvm_pubkeys.results | selectattr('item', 'equalto', ansible_ssh_private_key_file)
+      {{ (hvm_pubkeys.results | selectattr('item', 'equalto', ssh_key_file)
           | selectattr('rc', 'equalto', 0) | map(attribute='stdout') | map('trim') | list
           + hvm_ssh_keys | default([])) | unique }}
 

@@ -31,11 +31,18 @@ timezone: "{{ network.timezone | default('UTC') }}"
 bond_mode: "{{ network.bond_mode | default('active-backup') }}"
 proxy: "{{ network.proxy | default('') }}"
 
+# The key file each host is reached with: its ansible_ssh_private_key_file, else
+# ansible.cfg's private_key_file (~/.ssh/id_ed25519); ~ expanded.
+ssh_key_file: >-
+  {{ ansible_ssh_private_key_file
+     | default(lookup('ansible.builtin.config', 'DEFAULT_PRIVATE_KEY_FILE'), true)
+     | default('~/.ssh/id_ed25519', true) | expanduser }}
+
 # SSH through a jump host (ssh_jump), logged in with the deploy server's key
 ansible_ssh_common_args: >-
   {{ ('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=6'
       ~ ' -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30'
-      ~ ' -i ' ~ hostvars[groups['deploy_server'][0]].ansible_ssh_private_key_file
+      ~ ' -i ' ~ hostvars[groups['deploy_server'][0]].ssh_key_file
       ~ ' -o IdentitiesOnly=yes -W %h:%p ' ~ ssh_jump ~ '"') if ssh_jump is defined else '' }}
 
 # The VME Manager VM: vme_manager without its secrets (roles read those from

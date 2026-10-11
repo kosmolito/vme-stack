@@ -75,7 +75,7 @@ file from [`sites/example/ansible-navigator.yml`](../sites/example/ansible-navig
 (image, mounts, inventory, vault password file, run records):
 
 ```bash
-cd sites/acme                  # site.yml, ansible-navigator.yml, keys/, group_vars/, logs/, build/
+cd sites/acme                  # site.yml, ansible-navigator.yml, group_vars/, logs/, build/
 ansible-navigator run preflight.yml
 ansible-navigator run deploy.yml
 ansible-navigator run hvm_hosts.yml --limit hvm02 -e force_reinstall=true
@@ -91,13 +91,16 @@ Without navigator, the same with plain Docker or Podman:
 
 ```bash
 cd sites/acme
-docker run --rm -it -v $PWD:/site:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-stack/code/build \
+docker run --rm -it -v $PWD:/site:ro -v ~/.ssh:/home/runner/.ssh:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-stack/code/build \
   ghcr.io/kosmolito/vme-stack-ee:0.1.5 \
   ansible-playbook deploy.yml -i /site/site.yml --vault-password-file /site/.vault_pass
 ```
 
-- Paths in the site file are relative to it, so keys belong in the site directory
-  (`ansible_ssh_private_key_file: "{{ inventory_dir }}/keys/..."`): the container sees nothing else.
+- SSH key: `~/.ssh/id_ed25519` unless the inventory sets `ansible_ssh_private_key_file`.
+  ansible-navigator mounts your `~/.ssh` at `/home/runner/.ssh` and the image links
+  it as `~/.ssh`, so `~/.ssh/...` paths mean the same as on your machine (plain
+  Docker: `-v ~/.ssh:/home/runner/.ssh:ro`). Keys in the site directory work too:
+  `"{{ inventory_dir }}/keys/..."`.
 - The pipeline only makes outgoing connections (SSH, HTTPS, Redfish); no
   `--network host` needed, also not on a Mac or over VPN.
 - On the deploy server itself, keep the default SSH connection to its own

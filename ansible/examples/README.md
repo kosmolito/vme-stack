@@ -17,14 +17,14 @@ Both need:
 - an **NFS export** for the cluster (`vme_clusters[].datastores`)
 - ansible-navigator and Docker on the machine you run from (Podman: `container-engine: podman`
   in `ansible-navigator.yml`)
+- your SSH key `~/.ssh/id_ed25519` (the default; its public key goes onto the hosts), allowed
+  on the deploy server's login
 - a site directory, copied from the example, plus `ansible-navigator.yml` from
   [`sites/example/`](../../sites/example/ansible-navigator.yml):
   ```
   acme/
     site.yml
     ansible-navigator.yml
-    keys/vme-stack               # SSH private key (chmod 600): ansible_ssh_private_key_file of the
-                                 # deploy server and of group hvm (one key for both, or two files)
     group_vars/all/vault.yml     # from vault.example.yml, then: ansible-vault encrypt
     .vault_pass                  # the vault password (chmod 600)
     logs/  build/                # empty; runs write here
