@@ -3,7 +3,7 @@
 Two scenarios, both ending with the same result: HVM hosts installed, the VME
 Manager running and set up, an HVM cluster with shared NFS storage.
 
-| | [`vm/`](vm/site.yml) | [`baremetal/`](baremetal/site.yml) |
+| | [`vm/`](vm/inventory.yml) | [`baremetal/`](baremetal/inventory.yml) |
 |---|---|---|
 | hosts | VMs on any hypervisor | physical HPE (iLO) / Dell (iDRAC) servers |
 | `platform` | `manual` | `redfish` |
@@ -23,7 +23,7 @@ Both need:
   [`sites/example/`](../../sites/example/ansible-navigator.yml):
   ```
   acme/
-    site.yml
+    inventory.yml
     ansible-navigator.yml
     group_vars/all/vault.yml     # from vault.example.yml, then: ansible-vault encrypt
     .vault_pass                  # the vault password (chmod 600)
@@ -118,12 +118,15 @@ changed or deleted afterwards:
   (a host is in at most one cluster) and its datastores. The cluster is placed in
   its cloud's first group, or in `group` (one of the cloud's groups).
 
-The Manager reaches every cluster's hosts with one key pair:
-`vme_manager.ssh_private_key` / `ssh_public_key` (from the vault).
+The Manager reaches every cluster's hosts with one key pair, stored in the Manager:
+by default the Manager host's login key (`~/.ssh/id_ed25519` and its `.pub`, or the
+host's `ansible_ssh_private_key_file`). Another key: `vme_manager.ssh_private_key_file`
+(with `<file>.pub` next to it), or the key pair itself in
+`vme_manager.ssh_private_key` / `ssh_public_key` (e.g. from the vault).
 
 ## Values and secrets
 
-Values in `site.yml` are plain Ansible: a literal, or a template Ansible resolves
+Values in the site file are plain Ansible: a literal, or a template Ansible resolves
 when the value is used. For secrets, reference the vault with a quoted template,
 `"{{ vault_hvm_admin_password }}"` or `"{{ vault_ilo.password }}"`, so they stay
 encrypted; a literal password works too, but sits in the site file in clear text.

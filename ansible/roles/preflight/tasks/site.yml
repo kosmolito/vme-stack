@@ -116,6 +116,7 @@
                        'url': vme_manager.url | default(''), 'admin_user': vme_manager.admin_user | default('vmeadmin'),
                        'email': vme_manager.email | default(''), 'datastore': vme_manager.datastore | default(''),
                        'has_private_key': 'ssh_private_key' in vme_manager,
+                       'has_public_key': 'ssh_public_key' in vme_manager,
                        'ssh_public_key': vme_manager.ssh_public_key | default('')} -%}
       {%- endif -%}
       {%- set clouds = [] -%}

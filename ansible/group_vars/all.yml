@@ -1,4 +1,4 @@
-# What the roles read, derived from the site inventory (sites/example/site.yml).
+# What the roles read, derived from the site inventory (sites/example/inventory.yml).
 # Only names a site never sets are defined here: a site's own values must not be
 # overridden (these group_vars take precedence over the inventory's group vars).
 # Defaults of optional site settings are applied here.
@@ -68,6 +68,21 @@ manager: >-
       'netmask': mask | join('.'), 'gateway': network.gateway, 'dns': network.dns,
       'compute_vlans': network.compute_vlans | default([]), 'vme_iso': deploy_media.vme_iso_path | default('')} }}
   {%- else -%}{{ {} }}{%- endif -%}
+
+# The Manager's SSH key pair to the cluster hosts: vme_manager.ssh_private_key and
+# ssh_public_key if set, else the files ssh_private_key_file and <file>.pub (default:
+# the Manager host's login key). Read only when used (vme_cluster; preflight checks the files).
+manager_key_inline: "{{ vme_manager is defined and 'ssh_private_key' in vme_manager and 'ssh_public_key' in vme_manager }}"
+manager_key_file: >-
+  {{ (vme_manager.ssh_private_key_file
+      | default(hostvars[groups['vme_manager'][0]].ssh_key_file if groups['vme_manager'] | default([]) else '~/.ssh/id_ed25519'))
+     | expanduser if vme_manager is defined else '' }}
+manager_ssh_public_key: >-
+  {{ vme_manager.ssh_public_key if manager_key_inline | bool
+     else lookup('ansible.builtin.file', manager_key_file ~ '.pub') | trim }}
+manager_ssh_private_key: >-
+  {{ vme_manager.ssh_private_key if manager_key_inline | bool
+     else lookup('ansible.builtin.file', manager_key_file) ~ '\n' }}
 
 # Manager objects: groups by name, clouds with defaults, clusters with their group
 manager_groups: "{{ vme_groups | default([]) | map(attribute='name') | list }}"

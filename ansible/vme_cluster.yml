@@ -1,7 +1,7 @@
 ---
 # Stage 7: groups, clouds and HVM clusters (vme_groups, vme_clouds, vme_clusters), created by the Manager.
 # Run after vme_manager.yml:
-#   ansible-playbook vme_cluster.yml -i ../sites/<site>/site.yml --vault-password-file <file>
+#   ansible-playbook vme_cluster.yml -i ../sites/<site>/inventory.yml --vault-password-file <file>
 - name: Preflight
   ansible.builtin.import_playbook: preflight.yml
 

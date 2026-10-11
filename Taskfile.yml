@@ -60,12 +60,12 @@ tasks:
     deps: [setup]
     cmds:
       # every site file passes, every case in site_cases.yml fails with its message
-      - .venv/bin/python ansible/tests/check_sites.py sites/*/site.yml ansible/examples/*/site.yml --cases ansible/tests/site_cases.yml
+      - .venv/bin/python ansible/tests/check_sites.py sites/*/inventory.yml ansible/examples/*/inventory.yml --cases ansible/tests/site_cases.yml
       # playbook syntax (the example site needs no vault)
       - |
         cd ansible
         for pb in *.yml; do
-          ../.venv/bin/ansible-playbook "$pb" -i examples/baremetal/site.yml --syntax-check >/dev/null || exit 1
+          ../.venv/bin/ansible-playbook "$pb" -i examples/baremetal/inventory.yml --syntax-check >/dev/null || exit 1
         done
       # CHANGELOG, tested-with table and image pins match ee/VERSION
       - .venv/bin/python scripts/release.py docs
@@ -80,7 +80,7 @@ tasks:
     cmds:
       - docker run --rm vme-stack-ee:{{.EE_VERSION}} ansible --version
       - docker run --rm vme-stack-ee:{{.EE_VERSION}} /usr/bin/python3.12 -c "import jsonschema, passlib"
-      - docker run --rm vme-stack-ee:{{.EE_VERSION}} ansible-inventory -i examples/baremetal/site.yml --graph
+      - docker run --rm vme-stack-ee:{{.EE_VERSION}} ansible-inventory -i examples/baremetal/inventory.yml --graph
       - docker run --rm vme-stack-ee:{{.EE_VERSION}} cat VERSION | grep -qx "{{.EE_VERSION}}"
 
   release:

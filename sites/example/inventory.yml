@@ -51,8 +51,13 @@ all:
       # license_key: "{{ vault_vme_license }}"   # secret; omit for the trial
       datastore: nfs-prod             # move the Manager's disk to this datastore of its host's cluster
       autostart: false                # default (hpe-vm's); true: libvirt starts the VM with its host
-      ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # secret; the Manager's key to every cluster's hosts
-      ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"     # the key line itself, or from the vault
+      # The Manager's key pair to every cluster's hosts (stored in the Manager): a private key
+      # file and <file>.pub next to it. Default: the Manager host's login key (its
+      # ansible_ssh_private_key_file, else ~/.ssh/id_ed25519). Create one: ssh-keygen -t ed25519 -N '' -C vme-manager -f ~/.ssh/example_manager
+      ssh_private_key_file: ~/.ssh/example_manager
+      # Or the key pair itself (both, e.g. from the vault; they win over the file):
+      # ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # secret
+      # ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"     # the key line
 
     # Manager objects, joined by name; each is found by name or created, never changed or deleted.
     vme_groups:

@@ -18,7 +18,7 @@ it over HTTP. Each server boots its ISO, through its BMC (HPE iLO / Dell iDRAC) 
 for VMs, through whatever created them. Then the Manager and the cluster are set up
 through HPE's tools and the Manager's API.
 
-Everything is described in a **site file** (`site.yml`): network, hosts, Manager,
+Everything is described in a **site file** (`inventory.yml`): network, hosts, Manager,
 cluster. Secrets (passwords, keys) live in an Ansible Vault file next to it.
 
 ## Quick start
@@ -31,7 +31,7 @@ the code and all tools; navigator runs it with this folder mounted.
 
 ```
 sites/acme/
-  site.yml                    # the site (any name ending in .yml), from an example
+  inventory.yml               # the site (any name ending in .yml), from an example
   ansible-navigator.yml       # how to run it: image, mounts (from sites/example/)
   group_vars/all/vault.yml    # secrets, encrypted with ansible-vault
   .vault_pass                 # vault password (chmod 600), or ask each run
@@ -42,7 +42,7 @@ sites/acme/
 The site file is a plain **Ansible inventory**: site-wide settings in `all.vars`,
 the deploy server in group `deploy_server`, the HVM hosts in group `hvm` (with
 their defaults as group vars), the Manager's host in group `vme_manager`. Every
-setting, commented: [`sites/example/site.yml`](sites/example/site.yml).
+setting, commented: [`sites/example/inventory.yml`](sites/example/inventory.yml).
 
 **SSH key: `~/.ssh/id_ed25519` by default**, for the deploy server login and the
 hosts' admin user alike (its public key is installed on the hosts). It stays in

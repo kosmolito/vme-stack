@@ -1,7 +1,7 @@
 # Scenario: HVM hosts are VMs (VMware, Proxmox, Hyper-V, ...), e.g. a lab or a PoC.
 # The pipeline does not create or boot VMs (platform: manual): you create them, and
 # attach + boot the ISO URL the pipeline prints for each host. Steps: README.md.
-# The site file is a plain Ansible inventory; every setting: sites/example/site.yml.
+# The site file is a plain Ansible inventory; every setting: sites/example/inventory.yml.
 # Secrets: group_vars/all/vault.yml (template: vault.example.yml, not loaded).
 all:
   vars:
@@ -23,8 +23,6 @@ all:
       size: S                         # S = 12 GB / 2 vCPU: give hvm01 at least 32 GB
       admin_password: "{{ vault_vme_admin }}"
       datastore: nfs01                # move the Manager's disk to NFS once the cluster exists
-      ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # the Manager's key to the cluster hosts
-      ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"
 
     vme_groups:
       - name: poc

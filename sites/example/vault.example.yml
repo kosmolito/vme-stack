@@ -1,4 +1,4 @@
-# Every secret site.yml refers to ("{{ vault_... }}"). Template only: it is not loaded from here.
+# Every secret inventory.yml refers to ("{{ vault_... }}"). Template only: it is not loaded from here.
 # Copy to group_vars/all/vault.yml, fill in, then: ansible-vault encrypt group_vars/all/vault.yml
 
 # Hosts' admin user (hvm_admin_password, group hvm); the Manager logs in with it to build clusters
@@ -13,8 +13,8 @@ vault_vme_admin: "<Manager admin password>"
 # License key (vme_manager.license_key); without it the Manager starts a trial
 # vault_vme_license: "<VME license key>"
 
-# Key pair the Manager uses to reach every cluster's hosts (vme_manager.ssh_private_key /
-# ssh_public_key): ssh-keygen -t ed25519 -N '' -C vme-manager -f mgr
+# Only if the site sets the Manager's key pair itself (vme_manager.ssh_private_key /
+# ssh_public_key) instead of a key file: ssh-keygen -t ed25519 -N '' -C vme-manager -f mgr
 vault_vme_manager_ssh_private_key: |
   -----BEGIN OPENSSH PRIVATE KEY-----
   ...

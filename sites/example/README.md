@@ -1,6 +1,6 @@
 # Example site (every setting)
 
-[`site.yml`](site.yml) uses every setting of the site file, each with a comment;
+[`inventory.yml`](inventory.yml) uses every setting of the site file, each with a comment;
 [`vault.example.yml`](vault.example.yml) lists every secret it names. Values marked
 "default" can be left out. For a guided first site, start from
 [`ansible/examples/`](../../ansible/examples/README.md) (VMs or bare metal) instead,
@@ -13,8 +13,8 @@ into it:
 
 ```
 sites/acme/                       # anywhere; sites/ is gitignored in this repository
-  site.yml                        # from site.yml here, trimmed to your site (any name ending in .yml)
-  ansible-navigator.yml           # how to run it (from here; names site.yml as /site/site.yml)
+  inventory.yml                   # from inventory.yml here, trimmed to your site (any name ending in .yml)
+  ansible-navigator.yml           # how to run it (from here; names inventory.yml as /site/inventory.yml)
   group_vars/all/vault.yml        # from vault.example.yml, then: ansible-vault encrypt
   .vault_pass                     # the vault password (chmod 600)
   logs/                           # run logs, run records (.json), support bundles
@@ -32,7 +32,7 @@ cp -r sites/example sites/acme && cd sites/acme
 mkdir -p logs build
 test -f ~/.ssh/id_ed25519 || ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519   # the default key
 mkdir -p group_vars/all && mv vault.example.yml group_vars/all/vault.yml
-$EDITOR site.yml group_vars/all/vault.yml
+$EDITOR inventory.yml group_vars/all/vault.yml
 touch .vault_pass && chmod 600 .vault_pass && $EDITOR .vault_pass   # one line: the vault password
 ansible-vault encrypt group_vars/all/vault.yml --vault-password-file .vault_pass
 ```
@@ -49,7 +49,7 @@ VME_STACK_DEBUG=1 ansible-navigator run deploy.yml   # if something fails: suppo
 
 Without `.vault_pass`: remove the `cmdline` line in `ansible-navigator.yml` and run
 with `--ask-vault-pass --pae false`. With a different site file name, change
-`/site/site.yml` there.
+`/site/inventory.yml` there.
 
 ## Splitting a site into group_vars and host_vars
 
@@ -61,7 +61,7 @@ over files; e.g.:
 ```
 sites/acme/
   inventory.ini                   # [deploy_server], [hvm], [vme_manager]: host names only
-  group_vars/all/site.yml         # everything under all.vars here (site, network, vme_manager, ...)
+  group_vars/all/vars.yml         # everything under all.vars here (site, network, vme_manager, ...)
   group_vars/all/vault.yml        # secrets (ansible-vault encrypted)
   group_vars/hvm.yml              # the hvm group's vars (platform, ansible_user, key, ...)
   host_vars/deploy.yml            # the deploy server: ansible_host, ansible_user, key, media
@@ -99,4 +99,4 @@ holds the Manager VM) and cluster `dev` (hvm04, which has other interface names:
 hosts of one cluster must share them).
 
 `task test` checks this file with `validate.yml` (variables and site rules), like every
-`sites/*/site.yml`.
+`sites/*/inventory.yml`.

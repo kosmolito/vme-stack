@@ -2,12 +2,6 @@
 vault_vme_admin: "<Manager admin password>"
 vault_hvm_admin_password: "<password of the hosts' admin user>"
 # vault_vme_license: "<VME license key>"
-# Key pair the Manager uses to reach the hosts: ssh-keygen -t ed25519 -N '' -f mgr
-vault_vme_manager_ssh_private_key: |
-  -----BEGIN OPENSSH PRIVATE KEY-----
-  ...
-  -----END OPENSSH PRIVATE KEY-----
-vault_vme_manager_ssh_public_key: "ssh-ed25519 AAAA... vme-manager"
 # vCenter login: vme_clouds[].vcenter.username/password (clouds on one vCenter can share it)
 vault_vcenter: { username: "<user>@vsphere.local", password: "<vCenter password>" }
 # BMC logins: the hosts' bmc.username/password ("{{ vault_ilo.username }}", ...); one per server works too

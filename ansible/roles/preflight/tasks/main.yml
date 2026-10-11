@@ -1,6 +1,6 @@
 ---
 # Stage 1: preflight. Nothing here changes any machine.
-# 1. The site inventory (site.yml): secrets, variables, rules over the whole site
+# 1. The site inventory: secrets, variables, rules over the whole site
 #    (even with --limit), every problem of a step listed at once.
 # 2. Environment checks for the targeted hosts, all collected, then one verdict per host.
 
@@ -15,19 +15,29 @@
 
 # --- Controller -------------------------------------------------------------
 
-# Private key files on the controller: the deploy server's login and the HVM
-# hosts' (ansible_ssh_private_key_file of each, default ~/.ssh/id_ed25519; may be one file).
+# The Manager's key pair comes from files when the site does not set it inline
+# (vme_manager.ssh_private_key_file, default the Manager host's login key).
+- name: Note whether the Manager's key pair is read from files
+  run_once: true
+  ansible.builtin.set_fact:
+    manager_key_from_file: "{{ vme_manager is defined and vme_clusters | default([]) | length > 0 and not manager_key_inline | bool }}"
+
+# Private key files on the controller: the deploy server's login, the HVM hosts'
+# (ansible_ssh_private_key_file of each, default ~/.ssh/id_ed25519; may be one file)
+# and the Manager's key pair.
 - name: Check the SSH private keys on the controller
   run_once: true
   delegate_to: localhost
   ansible.builtin.stat:
     path: "{{ item }}"
+    follow: true                    # a key may be a symlink; its target's mode counts
   loop: "{{ controller_keys }}"
   register: ssh_key
   vars:
     controller_keys: >-
       {{ (([] if hostvars[deploy_host].ansible_connection | default('ssh') == 'local' else [hostvars[deploy_host].ssh_key_file])
-          + ansible_play_hosts_all | map('extract', hostvars, 'ssh_key_file') | list) | unique }}
+          + ansible_play_hosts_all | map('extract', hostvars, 'ssh_key_file') | list
+          + ([manager_key_file] if manager_key_from_file | bool else [])) | unique }}
 
 # The HVM hosts get the public key of their key file (ssh_key_file; plus hvm_ssh_keys), so
 # the key the controller logs in with is always installed. A key with a
@@ -60,6 +70,11 @@
       {%- for r in hvm_pubkeys.results if r.rc != 0 or not r.stdout.startswith(('ssh-', 'ecdsa-')) -%}
       {{-   out.append('cannot read the public key of ' ~ r.item ~ ' (a key with a passphrase needs ' ~ r.item ~ '.pub next to it)') -}}
       {%- endfor -%}
+      {%- if manager_key_from_file | bool
+            and lookup('ansible.builtin.file', manager_key_file ~ '.pub', errors='ignore') | default('', true) is not match('(ssh-|ecdsa-)') -%}
+      {{-   out.append('the Manager key pair needs the public key ' ~ manager_key_file ~ '.pub next to its private key'
+                       ~ ' (vme_manager.ssh_private_key_file; default: the login key of the Manager host)') -}}
+      {%- endif -%}
       {{ out }}
 
 - name: Public keys for the admin user (derived + hvm_ssh_keys)

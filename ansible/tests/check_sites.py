@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check site inventories with validate.yml (what preflight checks first), no machines.
 
-    check_sites.py <site.yml> ...     every file must pass (exit 1 otherwise)
+    check_sites.py <inventory.yml> ...     every file must pass (exit 1 otherwise)
     check_sites.py --cases <cases>    each case must fail with its expected message
 
 Each site's directory is copied into a temporary directory without its secrets
@@ -63,7 +63,7 @@ def site_files(inventory):
             yield rel
 
 
-def validate(inventory_text, extra_files=None, name="site.yml"):
+def validate(inventory_text, extra_files=None, name="inventory.yml"):
     """Run validate.yml on an inventory (plus its other site files); return (passed, output)."""
     with tempfile.TemporaryDirectory(prefix="vme-check-") as d:
         inv = Path(d) / name

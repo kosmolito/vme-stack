@@ -76,7 +76,7 @@ file from [`sites/example/ansible-navigator.yml`](../sites/example/ansible-navig
 (image, mounts, inventory, vault password file, run records):
 
 ```bash
-cd sites/acme                  # site.yml, ansible-navigator.yml, group_vars/, logs/, build/
+cd sites/acme                  # inventory.yml, ansible-navigator.yml, group_vars/, logs/, build/
 ansible-navigator run preflight.yml
 ansible-navigator run deploy.yml
 ansible-navigator run hvm_hosts.yml --limit hvm02 -e force_reinstall=true
@@ -94,7 +94,7 @@ Without navigator, the same with plain Docker or Podman:
 cd sites/acme
 docker run --rm -it -v $PWD:/site:ro -v ~/.ssh:/home/runner/.ssh:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-stack/code/build \
   ghcr.io/kosmolito/vme-stack-ee:0.1.6 \
-  ansible-playbook deploy.yml -i /site/site.yml --vault-password-file /site/.vault_pass
+  ansible-playbook deploy.yml -i /site/inventory.yml --vault-password-file /site/.vault_pass
 ```
 
 - SSH key: `~/.ssh/id_ed25519` unless the inventory sets `ansible_ssh_private_key_file`.

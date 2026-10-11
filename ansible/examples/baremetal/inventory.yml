@@ -1,7 +1,7 @@
 # Scenario: physical servers, HPE iLO and Dell iDRAC (vendor detected at run time).
 # The pipeline boots each server over Redfish from its ISO (platform: redfish), so
 # a run goes from powered-off servers to a cluster without anyone at a console.
-# The site file is a plain Ansible inventory; every setting: sites/example/site.yml.
+# The site file is a plain Ansible inventory; every setting: sites/example/inventory.yml.
 # Steps: README.md. Secrets: group_vars/all/vault.yml (template: vault.example.yml, not loaded).
 all:
   vars:
@@ -26,8 +26,7 @@ all:
       admin_password: "{{ vault_vme_admin }}"
       # license_key: "{{ vault_vme_license }}"    # omit for trial
       datastore: nfs01                # a datastore of the cluster that holds hvm01
-      ssh_private_key: "{{ vault_vme_manager_ssh_private_key }}"   # the Manager's key to every cluster's hosts
-      ssh_public_key: "{{ vault_vme_manager_ssh_public_key }}"
+      ssh_private_key_file: ~/.ssh/acme_manager   # the Manager's key to every cluster's hosts (+ .pub); default: hvm01's key
 
     # Manager objects, found by name or created. A cloud can be in several groups;
     # a cluster belongs to one cloud (type hvm) and one of that cloud's groups.

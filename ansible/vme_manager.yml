@@ -2,7 +2,7 @@
 # Stage 6: the VME Manager VM, installed with HPE's hpe-vm on manager.host,
 # then first-time setup through its API (tenant, admin, license or trial).
 # Run after hvm_hosts.yml:
-#   ansible-playbook vme_manager.yml -i ../sites/<site>/site.yml --vault-password-file <file>
+#   ansible-playbook vme_manager.yml -i ../sites/<site>/inventory.yml --vault-password-file <file>
 - name: Preflight
   ansible.builtin.import_playbook: preflight.yml
 

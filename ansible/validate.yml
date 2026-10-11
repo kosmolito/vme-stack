@@ -2,7 +2,7 @@
 # Check a site inventory without contacting any machine: its secrets resolve, every
 # variable (types, required, allowed values) and the rules across them. Preflight
 # runs the same first; this is for editing a site file and for CI.
-#   ansible-playbook validate.yml -i ../sites/<site>/site.yml --ask-vault-pass
+#   ansible-playbook validate.yml -i ../sites/<site>/inventory.yml --ask-vault-pass
 - name: Site inventory shape
   hosts: localhost
   gather_facts: false
@@ -19,7 +19,7 @@
           {{ inventory_file | default(ansible_inventory_sources | join(', ')) }} is not a vme-stack site inventory:
           it needs hosts in groups hvm and deploy_server, site and network in all.vars, and media
           (hvm_iso_path, ...) as a host var of the deploy server, not in all.vars
-          (a site file from before 0.1.4 has the old format; see sites/example/site.yml)
+          (a site file from before 0.1.4 has the old format; see sites/example/inventory.yml)
         quiet: true
 
 - name: Validate the site inventory

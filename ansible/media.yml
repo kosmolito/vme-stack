@@ -2,7 +2,7 @@
 # Stages 1-2 only: build and publish the ISOs of hosts that need an install,
 # then stop. For platform manual (e.g. lab Terraform), run this first, boot the
 # hosts from build/<host>/iso_url, then run hvm_hosts.yml to wait + post-install.
-#   ansible-playbook media.yml -i ../sites/<site>/site.yml [--limit <host>]
+#   ansible-playbook media.yml -i ../sites/<site>/inventory.yml [--limit <host>]
 - name: Preflight
   ansible.builtin.import_playbook: preflight.yml
 

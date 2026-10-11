@@ -14,7 +14,7 @@
 ansible-navigator:
   ansible:
     inventory:
-      entries: [/site/site.yml]
+      entries: [/site/inventory.yml]
     # The vault password from .vault_pass (chmod 600, never committed). Without
     # it: remove this line and run with --ask-vault-pass --pae false (navigator
     # cannot prompt while it records the run).

@@ -14,7 +14,7 @@ Everything Ansible needs is in the EE `vme-stack-ee` (build: `ee/build.sh`; usag
 
 ```bash
 cd ansible
-SITE=<path to>/site.yml
+SITE=<path to>/inventory.yml
 ansible-playbook validate.yml -i $SITE                  # the site inventory only (variables, rules), contacts nothing
 ansible-playbook preflight.yml -i $SITE                  # stage 1 only, changes nothing
 ansible-playbook media.yml -i $SITE                      # build + publish ISOs, write build/<host>/iso_url

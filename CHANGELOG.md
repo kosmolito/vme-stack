@@ -9,6 +9,19 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **The Manager's SSH key pair defaults to your login key**: without
+  `vme_manager.ssh_private_key`/`ssh_public_key`, the key pair the Manager uses
+  on the cluster hosts is read from `vme_manager.ssh_private_key_file` and
+  `<file>.pub`, by default the Manager host's login key (`~/.ssh/id_ed25519`
+  unless `ansible_ssh_private_key_file` says otherwise). No vault entries needed
+  for it; preflight checks the files. Setting the pair itself (e.g. from the
+  vault) still works; setting only one of the two is now an error.
+- The example site files are named `inventory.yml` (was `site.yml`, which editors
+  take for a playbook); in a split site the example names `group_vars/all/vars.yml`.
+  Any name works, as before.
+- Fix: preflight rejected an SSH key file that is a symlink (it read the link's
+  mode, 0777, instead of the key's).
+
 ## [0.1.6] - 2026-10-11
 
 - **SSH key `~/.ssh/id_ed25519` by default** (`ansible.cfg` `private_key_file`), for

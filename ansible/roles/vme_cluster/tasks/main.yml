@@ -13,7 +13,7 @@
 - name: Let the Manager's key into the cluster hosts' admin user
   ansible.builtin.lineinfile:
     path: "/home/{{ hostvars[item].admin_user }}/.ssh/authorized_keys"
-    line: "{{ vme_manager.ssh_public_key }}"
+    line: "{{ manager_ssh_public_key }}"
     create: true
     mode: "0600"
   delegate_to: "{{ item }}"
@@ -183,7 +183,7 @@
   ansible.builtin.set_fact:
     key_match: "{{ key_list.json.keyPairs | selectattr('publicKey', 'search', '^' ~ (pub.split()[:2] | join(' ') | regex_escape)) | list }}"
   vars:
-    pub: "{{ vme_manager.ssh_public_key }}"
+    pub: "{{ manager_ssh_public_key }}"
 
 - name: Store the Manager's SSH key pair
   ansible.builtin.uri:
@@ -195,8 +195,8 @@
     body:
       keyPair:
         name: "{{ manager.hostname }}-ssh"
-        publicKey: "{{ vme_manager.ssh_public_key }}"
-        privateKey: "{{ vme_manager.ssh_private_key }}"
+        publicKey: "{{ manager_ssh_public_key }}"
+        privateKey: "{{ manager_ssh_private_key }}"
   delegate_to: "{{ probe_from }}"
   register: key_new
   when: key_match | length == 0

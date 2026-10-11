@@ -6,7 +6,7 @@
 # host by host, instead of preflight's one list.)
 # Rules across variables (unique IPs/MACs, IP in the subnet, references between
 # Manager objects, formats) are in plugins/filter/vme_site.py.
-# Reference with every setting: sites/example/site.yml.
+# Reference with every setting: sites/example/inventory.yml.
 argument_specs:
   site_settings:
     short_description: Settings of the whole site (all.vars of the site inventory)
@@ -48,7 +48,12 @@ argument_specs:
           license_key: {type: str, no_log: true}
           datastore: {type: str, description: A datastore of the Manager host's cluster to move the Manager's disk to.}
           autostart: {type: bool}
-          ssh_private_key: {type: str, no_log: true, description: The Manager's private key to every cluster's hosts.}
+          ssh_private_key_file:
+            type: str
+            description: >-
+              The Manager's key pair to every cluster's hosts as files: this and <file>.pub
+              (default: the Manager host's login key, ~/.ssh/id_ed25519 unless its ansible_ssh_private_key_file).
+          ssh_private_key: {type: str, no_log: true, description: The Manager's private key itself (instead of the file; with ssh_public_key).}
           ssh_public_key: {type: str}
       vme_groups:
         type: list

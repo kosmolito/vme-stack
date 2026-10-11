@@ -227,9 +227,9 @@ cases:
   - name: Manager datastore with the Manager host in no cluster
     patch: {all: {vars: {vme_clusters: [{name: c1, cloud: sto-hvm, hosts: [hvm02]}]}}}
     expect: "vme_manager.datastore needs the Manager host 'hvm01' in one of vme_clusters"
-  - name: clusters without the Manager's SSH key
+  - name: Manager public key without its private key
     patch: {all: {vars: {vme_manager: {ssh_private_key: null}}}}
-    expect: vme_clusters need vme_manager.ssh_private_key
+    expect: vme_manager.ssh_private_key and ssh_public_key go together
   # --- clusters ---
   - name: cluster hosts with different interface names
     patch:

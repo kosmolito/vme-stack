@@ -18,6 +18,6 @@
     srv_validate_certs: "{{ bmc.validate_certs | default(false) }}"
     eject_virtual_media: true
     insert_virtual_media: true
-    bios_setup: "{{ bmc.bios_setup | default(false) }}"   # opt-in per host (site.yml)
+    bios_setup: "{{ bmc.bios_setup | default(false) }}"   # opt-in per host (site inventory)
     boot_once_order: true
     start_or_reboot: true

@@ -30,7 +30,7 @@
 
 One linear pipeline; only the boot step is pluggable per platform. Each stage can also run alone.
 
-1. **Preflight** — validate `site.yml` against the schema; check BMC/hypervisor reachability, credentials, ISO presence, DNS/NTP reachability.
+1. **Preflight** — validate the site inventory (variables and rules); check BMC/hypervisor reachability, credentials, ISO presence, DNS/NTP reachability.
 2. **Media** — render per-host cloud-init seed; prepare the shared HVM boot ISO once; serve both over HTTP.
 3. **Boot (driver)** — create or locate the machine, attach media, one-time boot from CD, power cycle.
 4. **Wait** — poll until the host answers on SSH (timeout per host).
@@ -45,7 +45,7 @@ One linear pipeline; only the boot step is pluggable per platform. Each stage ca
 | `redfish` | HPE iLO, Dell iDRAC (vendor detected at run time) | Redfish VirtualMedia from the ISO URL (iLO slot 2; iDRAC `VirtualMedia/1`, legacy `CD` path for iDRAC < 9 6.00) | Role `boot_redfish` -> vendored `baremetal_lifecycle`; iLO virtual media scripting needs an iLO Advanced license |
 | `manual` | anything else: VMs (Proxmox, vSphere, libvirt), servers without a driver | Done outside the pipeline (Terraform or a person) from the ISO URL | Pipeline publishes the URL and waits for SSH |
 
-**VMs are servers.** The pipeline never creates, deletes or configures VMs. A VM is a server that already exists and is booted from its ISO URL by something else; VM creation (lab: Terraform with bpg/proxmox, in the private lab repo) is a separate step. Driver inputs: host record from `site.yml`, `host_iso_url`. Drivers must be idempotent and never touch disks or BIOS beyond the one-time boot.
+**VMs are servers.** The pipeline never creates, deletes or configures VMs. A VM is a server that already exists and is booted from its ISO URL by something else; VM creation (lab: Terraform with bpg/proxmox, in the private lab repo) is a separate step. Driver inputs: host record from the site inventory, `host_iso_url`. Drivers must be idempotent and never touch disks or BIOS beyond the one-time boot.
 
 **Seed delivery**
 
@@ -88,9 +88,9 @@ vme-stack/
   Taskfile.yml               # task check, task release
 ```
 
-## Customer input file (site.yml)
+## Customer input file (site inventory)
 
-One site file per site is the only thing that changes between customers. It is a plain **Ansible inventory** (YAML, any name): `all.vars` holds the site-wide settings (`site`, `network`, `ssh_jump`, `vme_manager`, `vme_groups`, `vme_clouds`, `vme_clusters`); group `deploy_server` has the one deploy server (with its `media`: the ISO paths and how it serves them), group `hvm` the HVM hosts with their defaults as group vars, group `vme_manager` the one host that runs the Manager VM. Connections use Ansible's own variables (`ansible_host` = the host's static IP, `ansible_user` = the admin user the install creates, `ansible_ssh_private_key_file`). Secrets are Ansible values, best vault references (`"{{ vault_x }}"`). Every setting with comments: `sites/example/site.yml`; types, required, allowed values: `ansible/roles/preflight/meta/argument_specs.yml`.
+One site file per site is the only thing that changes between customers. It is a plain **Ansible inventory** (YAML, any name): `all.vars` holds the site-wide settings (`site`, `network`, `ssh_jump`, `vme_manager`, `vme_groups`, `vme_clouds`, `vme_clusters`); group `deploy_server` has the one deploy server (with its `media`: the ISO paths and how it serves them), group `hvm` the HVM hosts with their defaults as group vars, group `vme_manager` the one host that runs the Manager VM. Connections use Ansible's own variables (`ansible_host` = the host's static IP, `ansible_user` = the admin user the install creates, `ansible_ssh_private_key_file`). Secrets are Ansible values, best vault references (`"{{ vault_x }}"`). Every setting with comments: `sites/example/inventory.yml` (not `site.yml`: editors take that name for a playbook); types, required, allowed values: `ansible/roles/preflight/meta/argument_specs.yml`.
 
 ```yaml
 all:
@@ -177,14 +177,14 @@ Terraform owns the VME Manager and its configuration because these are long-live
 
 **Module `terraform/vme-manager`**
 
-- Inputs generated from `site.yml`: Manager IP/FQDN, target host for the Manager VM, cluster name, network, credentials from Vault
+- Inputs generated from the site inventory: Manager IP/FQDN, target host for the Manager VM, cluster name, network, credentials from Vault
 - Deploys the VME Manager appliance onto the first HVM host
 - Base config with the Morpheus provider: groups, cloud, cluster, networks, NTP/DNS settings
 - Outputs: Manager URL, cluster ID
 
 **Cluster join**
 
-- Create the HVM cluster if missing, add every host from `site.yml`
+- Create the HVM cluster if missing, add every host from the site inventory
 - Prefer the Morpheus Terraform provider; fall back to the VME Manager API from Ansible where the provider lacks a resource
 
 **State**
@@ -209,12 +209,12 @@ Everything runs from one container image so every site gets identical tooling.
 
 ```
 # full pipeline
-ansible-navigator run deploy.yml -i customers/acme/site.yml --vault-id acme@prompt
+ansible-navigator run deploy.yml -i customers/acme/inventory.yml --vault-id acme@prompt
 
 # single stages
-ansible-navigator run playbooks/preflight.yml   -i site.yml
-ansible-navigator run playbooks/hvm_hosts.yml   -i site.yml --limit hvm01
-ansible-navigator run playbooks/vme_manager.yml -i site.yml
+ansible-navigator run playbooks/preflight.yml   -i inventory.yml
+ansible-navigator run playbooks/hvm_hosts.yml   -i inventory.yml --limit hvm01
+ansible-navigator run playbooks/vme_manager.yml -i inventory.yml
 ```
 
 A thin `Makefile` wraps these (`make preflight SITE=acme`, `make deploy SITE=acme`). AWX/Semaphore is optional later and uses the same EE image.
@@ -339,3 +339,4 @@ Build in this order; each milestone is usable on its own.
 - **Native Ansible inventory, validation per variable (decided 2026-10-11, user choices)**: the custom inventory plugin and the JSON schema are gone; the site file is a plain Ansible YAML inventory (any name): `all.vars` for the site-wide settings, group `deploy_server` (exactly one host), group `hvm` (defaults as group vars, overrides as host vars), group `vme_manager` (exactly one HVM host; was `vme_manager.host`). Connections use Ansible's own `ansible_host` (the static IP), `ansible_user` (the admin user the install creates), `ansible_ssh_private_key_file` (`"{{ inventory_dir }}/keys/..."`); `ssh_jump` for a jump host. Why: Ansible-native (standard inventory tools, `--limit`, group/host vars, vault templates trusted by Ansible itself, AWX/AAP inventory sources). `ansible/group_vars/` derives what the roles read (`ip`, `admin_user`, `mgmt_interface`, `manager`, `media_url`, ...) as templates: these group_vars outrank the inventory's group vars, so they define only names a site never sets, with the site's optional values defaulted inside (verified: derived values reach `hostvars` of hosts outside the play). Secrets stay out of `manager` (roles read them from `vme_manager`), so using `manager.ip` never needs the vault. Validation (user: per variable): preflight first (and `validate.yml` alone, no connection): inventory shape, secrets resolve (by field name, without resolving them twice), `validate_argument_spec` against `roles/preflight/meta/argument_specs.yml` (entry points `site_settings`, `hvm_host`; not named after a task file, else Ansible checks them itself host by host), then the site rules in the filter plugin over a view of the inventory (formats moved there from the schema; passwords only as hashes). Not detectable natively: misspelled top-level variable names (unknown keys inside the known dicts are). Tests: `check_sites.py` runs `validate.yml` per site file and per case (50 cases, parallel, dummy vault values), so it tests what preflight runs. Lab Terraform reads the inventory shape; lab playbooks load `ansible/group_vars/all.yml` (jump) explicitly. Verified in the lab: rebuilt from scratch with lab Terraform (deploy server and three hosts), bootstrap and NFS through the jump host, `deploy.yml` from empty hosts to Manager 9.0.2 and two clusters (2 hosts with the NFS datastore online and the Manager disk moved; 1 host) plus the vCenter cloud with import; re-run 0 changes in 2 min 11 s. (First attempt: the HVM VMs had been created before their ISOs existed and sat in UEFI "no bootable device"; a reset fixed it; the lab order is media first, then terraform apply.) Found on the way: `media_server` misread the deploy server's state where systemctl prints nothing.
 - **Media on the deploy server; ISOs named hvm-<host>.iso (decided 2026-10-11, user requests)**: `media` moves from `all.vars` to a host var of the deploy server (it describes that server: the ISOs on it and how it serves them), with `hvm_iso`/`vme_iso` renamed `hvm_iso_path`/`vme_iso_path`; the roles' derived names (`hvm_src_iso`, `media_www_root`, `media_url`, ...) are unchanged. A leftover `all.vars.media` fails the shape check; the deploy server's `media` has its own argument spec entry (`deploy_server`). The per-host ISO is `hvm-<host>.iso` (was `vme-stack-<host>-<seed hash>.iso`); the seed hash it was built from lives in `hvm-<host>.iso.seed` next to it, so an unchanged seed is still not rebuilt, and old-style ISOs of the host are removed. Trade-off: the URL no longer changes with the content, so a hypervisor or BMC that kept an older copy can boot it; the install-id check after the install (instance-id = `<host>-<seed hash>`) catches that with "did not boot <url>". The controller also records `build/<host>/iso_seed`; lab Terraform puts that hash into its own copy's file name on Proxmox, so it re-downloads when the content changes. Verified in the lab on one host without reinstalling it: built and served as `hvm-<host>.iso` (HTTP 200) with `.seed`; a second build with the same seed skipped (0 changes); lab Terraform fetched it as `hvm-<host>-<seed hash>.iso` and attached it (the hypervisor's old-style copies removed, no VM restarted); a normal run's post-install removed the ISO, its `.seed` and the controller's records; Terraform then detached it, plan clean.
 - **Default SSH key ~/.ssh/id_ed25519 (decided 2026-10-11, user request)**: keys belong in the user's `~/.ssh`, not copied into site directories. `ansible.cfg` sets `private_key_file = ~/.ssh/id_ed25519` (Ansible's own default mechanism), so `ansible_ssh_private_key_file` is optional for the deploy server and the hosts; the derived `ssh_key_file` (a host's own setting, else that default, `~` expanded) feeds preflight's key checks, the public-key derivation and the jump host's ProxyCommand. In the container: ansible-navigator already mounts the user's `~/.ssh` at `/home/runner/.ssh` (an explicit `--execution-environment-volume-mounts` for it collides: "Duplicate mount point"), but the image's home is `/runner`; the runner (`tools/vme_stack_run.py`, after the base image's entrypoint, which creates the passwd entry and `HOME`) links `~/.ssh` to that mount, so `~/.ssh/...` means the same natively and in the container. (Linking in our own entrypoint failed: `HOME` is still `/` there.) Verified against the lab: a site without `ansible_ssh_private_key_file` passed preflight natively and through ansible-navigator with only navigator's own mount; the lab site with its explicit key re-ran `deploy.yml` with 0 changes on the new code.
+- **Manager key pair from files; example site file `inventory.yml` (decided 2026-10-11, user choices)**: `vme_manager.ssh_private_key_file` names the Manager's key pair to the cluster hosts as files (`<file>` and `<file>.pub`), default the Manager host's login key (`ssh_key_file`: its `ansible_ssh_private_key_file`, else `~/.ssh/id_ed25519`), so a site with one key everywhere needs no Manager key settings and no vault entries for it. The key pair itself (`ssh_private_key` + `ssh_public_key`, e.g. from the vault) still works and wins; one without the other is an error. Trade-off accepted: with the default, the operator's login key is stored in the Manager (its admins can use it); a dedicated key is one setting away. Derived `manager_ssh_private_key`/`manager_ssh_public_key` (group_vars) read the files only when vme_cluster uses them; preflight checks the private key file (exists, mode) and that `<file>.pub` is a public key line, only when clusters are defined and no inline pair is set. Site file name: editors (Ansible language servers) take a `site.yml` for a playbook, so the example sites are `inventory.yml` and the split example's site-wide file is `group_vars/all/vars.yml` (any name works; only docs and examples changed).

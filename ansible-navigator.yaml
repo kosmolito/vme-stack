@@ -5,8 +5,8 @@
 # without rebuilding the image.
 #   cd vme-stack
 #   SITE=$(realpath <site dir>)           # absolute paths: the container's working directory is the code
-#   ansible-navigator run validate.yml -i $SITE/site.yml
-#   ansible-navigator run deploy.yml -i $SITE/site.yml --vault-password-file $SITE/.vault_pass
+#   ansible-navigator run validate.yml -i $SITE/inventory.yml
+#   ansible-navigator run deploy.yml -i $SITE/inventory.yml --vault-password-file $SITE/.vault_pass
 #   VME_STACK_DEBUG=1 ansible-navigator run deploy.yml -i ...   # verbose + support bundle in logs/
 # Navigator mounts the inventory's directory under the same path, so the vault
 # password file and the keys in the site directory (keys/..., see sites/example)

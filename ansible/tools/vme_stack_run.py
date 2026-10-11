@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a vme-stack command with a run log, and a support bundle when debugging.
 
-    vme_stack_run.py ansible-playbook deploy.yml -i /site/site.yml --ask-vault-pass
+    vme_stack_run.py ansible-playbook deploy.yml -i /site/inventory.yml --ask-vault-pass
 
 The EE entrypoint runs every command through this. Anything but ansible-playbook
 is started as it is. For ansible-playbook:

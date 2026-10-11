@@ -370,8 +370,11 @@ def vme_site_errors(site, roles_dir):
             errs.append(f"{label}: only one datastore can be the default (image target)")
         if any(h["compute_interface"] for h in present) and not net.get("compute_vlans"):
             errs.append(f"{label}: network.compute_vlans is required when the hosts have a compute interface")
-    if mgr and clusters and not (mgr.get("has_private_key") and mgr.get("ssh_public_key")):
-        errs.append("vme_clusters need vme_manager.ssh_private_key and ssh_public_key (the Manager's key to the hosts)")
+    if mgr and mgr.get("has_private_key") != mgr.get("has_public_key"):
+        errs.append(
+            "vme_manager.ssh_private_key and ssh_public_key go together"
+            " (or neither: the key pair then comes from ssh_private_key_file)"
+        )
     if mgr and mgr.get("datastore") and mgr_host:
         home = next((cl for cl in clusters if mgr_host in cl["hosts"]), None)
         if not home:
