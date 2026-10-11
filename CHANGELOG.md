@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-11
+
 - **Site file change: the site file is a plain Ansible inventory** (YAML, any
   name). No custom inventory plugin and no JSON schema any more. `all.vars` holds
   the site-wide settings (`site`, `network`, `ssh_jump`, `vme_manager`,

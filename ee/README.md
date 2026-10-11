@@ -35,6 +35,7 @@ PLATFORMS=linux/amd64,linux/arm64 IMAGE=ghcr.io/<owner>/vme-stack-ee ee/build.sh
 | 0.1.1 | VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078 |
 | 0.1.2 | VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078 |
 | 0.1.3 | VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078 |
+| 0.1.4 | VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078 |
 
 ## Release (GHCR)
 
@@ -90,7 +91,7 @@ Without navigator, the same with plain Docker or Podman:
 ```bash
 cd sites/acme
 docker run --rm -it -v $PWD:/site:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-stack/code/build \
-  ghcr.io/kosmolito/vme-stack-ee:0.1.3 \
+  ghcr.io/kosmolito/vme-stack-ee:0.1.4 \
   ansible-playbook deploy.yml -i /site/site.yml --vault-password-file /site/.vault_pass
 ```
 
@@ -187,9 +188,9 @@ Mount a host directory at `/vme-stack-hotfix`:
 
 ```bash
 mkdir /srv/vme-stack/hotfix
-docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.3 true   # exports the code
+docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.4 true   # exports the code
 vi /srv/vme-stack/hotfix/roles/...                                                       # fix
-docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.3 ansible-playbook ...
+docker run --rm -v /srv/vme-stack/hotfix:/vme-stack-hotfix ... vme-stack-ee:0.1.4 ansible-playbook ...
 ```
 
 With navigator, add the mount to `volume-mounts` in `ansible-navigator.yml`:
