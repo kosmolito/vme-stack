@@ -1,0 +1,170 @@
+---
+# One HVM cluster (loop var cl, from main.yml): created by the Manager on its
+# cloud and group, then its shared datastores.
+- name: "Choose the layout of cluster {{ cl.name }}"
+  ansible.builtin.set_fact:
+    vme_layout_code: "{{ cl.layout if cl.layout | length > 0
+                         else layouts.json.layouts | map(attribute='code') | newest_hvm_layout }}"
+
+- name: "Check the layout exists: {{ vme_layout_code }}"
+  ansible.builtin.assert:
+    that: layouts.json.layouts | selectattr('code', 'equalto', vme_layout_code) | list | length == 1
+    fail_msg: >-
+      Cluster layout '{{ vme_layout_code }}' not on the Manager; HVM layouts there:
+      {{ layouts.json.layouts | map(attribute='code') | select('match', '^mvm-') | join(', ') }}
+    quiet: true
+
+- name: Find cluster {{ cl.name }}
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/clusters?name={{ cl.name | urlencode }}"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: cluster_find
+
+- name: Create cluster {{ cl.name }}
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/clusters"
+    method: POST
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      cluster:
+        name: "{{ cl.name }}"
+        type: mvm-cluster
+        group: {id: "{{ vme_group_ids[cl.group] | int }}"}
+        cloud: {id: "{{ vme_cloud_ids[cl.cloud] | int }}"}
+        layout: {id: "{{ (layouts.json.layouts | selectattr('code', 'equalto', vme_layout_code) | first).id }}"}
+        server:
+          name: "{{ cl.name }}"
+          visibility: private
+          plan:
+            id: "{{ (plan_find.json.servicePlans | selectattr('code', 'equalto', 'manual-default') | first).id }}"
+            code: manual-default
+          # Objects with ip (+ name), not plain strings: the API reads .ip.
+          sshHosts: >-
+            {%- set out = [] -%}
+            {%- for h in cl.hosts -%}{{ out.append({'ip': hostvars[h].ip, 'name': h}) }}{%- endfor -%}
+            {{ out }}
+          sshPort: 22
+          sshUsername: "{{ hostvars[cl.hosts[0]].admin_user }}"
+          # The Manager only probes port 22 without a password and never logs in
+          # (2026-10-10); HPE's docs also ask for user + password.
+          sshPassword: "{{ lookup('ansible.builtin.vars', hostvars[cl.hosts[0]].admin_password_var) }}"
+          network: {name: "{{ hostvars[cl.hosts[0]].mgmt_interface }}"}
+          cpuPlacementMode: unmanaged
+          config:
+            provisionKey: "{{ vme_key_id | int }}"
+            computeInterfaceName: "{{ hostvars[cl.hosts[0]].compute_interface }}"
+            computeVlans: "{{ cl.compute_vlans | join(',') }}"
+            overlayInterfaceName: ""
+            cpuArch: x86_64
+            cpuModel: host-passthrough
+            dynamicPlacementMode: "off"
+            powerPolicy: balanced
+    status_code: [200, 201]
+    timeout: 120
+  delegate_to: "{{ probe_from }}"
+  register: cluster_new
+  failed_when: false
+  no_log: true
+  when: cluster_find.json.clusters | selectattr('name', 'equalto', cl.name) | list | length == 0
+  changed_when: true
+
+# no_log above (the request carries the password); report the API's answer.
+- name: Check the cluster was accepted
+  ansible.builtin.assert:
+    that: cluster_new is skipped or cluster_new.status | default(0) in [200, 201]
+    fail_msg: >-
+      Creating the cluster failed: HTTP {{ cluster_new.status | default('?') }}
+      {{ cluster_new.json.msg | default('') }} {{ cluster_new.json.errors | default({}) }}
+    quiet: true
+
+- name: Remember the cluster id
+  ansible.builtin.set_fact:
+    vme_cluster_id: "{{ cluster_new.json.cluster.id if cluster_new is not skipped
+                        else (cluster_find.json.clusters | selectattr('name', 'equalto', cl.name) | first).id }}"
+
+# The Manager installs packages and builds the networking on every host.
+- name: Wait for the cluster to be ready
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/clusters/{{ vme_cluster_id }}"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: cluster_state
+  until: cluster_state.json.cluster.status | default('') in ['ok', 'failed', 'error', 'deprovisioning']
+  retries: 120
+  delay: 30
+
+- name: Check the cluster
+  ansible.builtin.assert:
+    that: cluster_state.json.cluster.status == 'ok'
+    fail_msg: >-
+      Cluster {{ cl.name }} is '{{ cluster_state.json.cluster.status }}':
+      {{ cluster_state.json.cluster.statusMessage | default('see the cluster history in the Manager UI') }}
+    success_msg: "Cluster {{ cl.name }} is ok with {{ cluster_state.json.cluster.servers | default([]) | length }} hosts"
+
+# --- shared datastores ---------------------------------------------------------
+
+- name: List the cluster's datastores
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/clusters/{{ vme_cluster_id }}/datastores?max=100"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: ds_find
+  when: cl.datastores | length > 0
+
+- name: Add NFS datastores
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/clusters/{{ vme_cluster_id }}/datastores"
+    method: POST
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      datastore:
+        name: "{{ item.name }}"
+        datastoreType: {code: libvirt-netfs-nfs}
+        active: true
+        defaultStore: "{{ item.default | default(false) }}"
+        config: "{{ {'sourceHostname': item.host, 'sourceDirPath': item.path}
+                    | combine({'sourceVersion': item.version} if item.version is defined else {}) }}"
+    status_code: [200, 201]
+    timeout: 120
+  delegate_to: "{{ probe_from }}"
+  loop: "{{ cl.datastores | selectattr('type', 'equalto', 'nfs') | list }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.host }}:{{ item.path }})"
+  when: ds_find.json.datastores | selectattr('name', 'equalto', item.name) | list | length == 0
+  register: ds_new
+  changed_when: true
+
+- name: Wait for the datastores to come online
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/clusters/{{ vme_cluster_id }}/datastores?max=100"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: ds_state
+  until: >-
+    ds_state.json.datastores | selectattr('name', 'in', cl.datastores | map(attribute='name') | list)
+    | selectattr('online', 'equalto', true) | list | length == cl.datastores | length
+  retries: 20
+  delay: 15
+  when: cl.datastores | length > 0
+
+- name: Report datastores
+  ansible.builtin.debug:
+    msg: "{{ ds_state.json.datastores | default([]) | map(attribute='name') | zip(ds_state.json.datastores | default([]) | map(attribute='online'))
+             | map('join', ': online=') | list }}"
+  when: cl.datastores | length > 0
+
+# For manager_vm.yml: the group and datastores of the Manager host's cluster.
+- name: Remember the Manager's cluster
+  ansible.builtin.set_fact:
+    vme_manager_group: "{{ cl.group }}"
+    vme_manager_cluster_ds: "{{ ds_state.json.datastores | default([]) }}"
+  when: vme_manager.host in cl.hosts

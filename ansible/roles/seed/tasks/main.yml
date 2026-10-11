@@ -1,0 +1,61 @@
+---
+# Render the per-host autoinstall seed on the controller.
+- name: Create build directory for {{ inventory_hostname }}
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/build/{{ inventory_hostname }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+
+# The seed starts from the one HPE ships on the site's HVM ISO, so each ISO
+# version installs as HPE intends (user-data.j2 adds only our answers). Per
+# host, not run_once: a run_once task skipped on the first host (already
+# installed) would be skipped for all.
+- name: Read HPE's seed from {{ hvm_src_iso | basename }}
+  ansible.builtin.shell: |
+    set -eu
+    t=$(mktemp -d)
+    trap 'rm -rf "$t"' EXIT
+    xorriso -osirrox on -indev {{ hvm_src_iso | quote }} -extract /server/user-data "$t/user-data" >/dev/null 2>&1
+    cat "$t/user-data"
+  delegate_to: "{{ deploy_host }}"
+  register: hpe_seed_read
+  changed_when: false
+  check_mode: false
+
+- name: Check HPE's seed asks only what we answer
+  vars:
+    hpe_auto: "{{ (hpe_seed_read.stdout | from_yaml).autoinstall | default({}) }}"
+  ansible.builtin.assert:
+    that:
+      - hpe_auto.version is defined
+      - hpe_auto['interactive-sections'] | default([]) | difference(['storage', 'identity', 'network', 'proxy']) | length == 0
+    fail_msg: >-
+      {{ hvm_src_iso }}: /server/user-data is not the autoinstall seed we know
+      (interactive-sections: {{ hpe_auto['interactive-sections'] | default('none') }});
+      the seed role answers storage, identity, network and proxy only.
+    quiet: true
+
+- name: Render user-data
+  vars:
+    hpe_seed: "{{ hpe_seed_read.stdout }}"
+  ansible.builtin.template:
+    src: user-data.j2
+    dest: "{{ playbook_dir }}/build/{{ inventory_hostname }}/user-data"
+    mode: "0644"
+  delegate_to: localhost
+
+# The hash names the ISO and goes into the cloud-init instance-id, so after an
+# install we can prove the host booted this exact seed (see wait_ssh).
+- name: Hash the rendered seed
+  ansible.builtin.set_fact:
+    seed_sha: >-
+      {{ lookup('file', playbook_dir ~ '/build/' ~ inventory_hostname ~ '/user-data')
+         | hash('sha256') | truncate(12, True, '') }}
+
+- name: Render meta-data
+  ansible.builtin.template:
+    src: meta-data.j2
+    dest: "{{ playbook_dir }}/build/{{ inventory_hostname }}/meta-data"
+    mode: "0644"
+  delegate_to: localhost

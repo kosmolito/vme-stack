@@ -1,0 +1,28 @@
+---
+- name: Restart timesyncd
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    state: restarted
+    enabled: true
+  become: true
+
+- name: Restart chrony
+  ansible.builtin.systemd_service:
+    name: chrony
+    state: restarted
+    enabled: true
+  become: true
+
+# Both listen to "sshd config changed"; handlers run in this order.
+- name: Check the sshd configuration
+  ansible.builtin.command: sshd -t
+  become: true
+  changed_when: false
+  listen: sshd config changed
+
+- name: Reload sshd
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: reloaded
+  become: true
+  listen: sshd config changed

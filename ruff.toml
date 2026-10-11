@@ -1,0 +1,10 @@
+# ruff for the Python parts (inventory/filter plugins, probe scripts)
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[lint.per-file-ignores]
+# Ansible plugins start with their DOCUMENTATION string, before the imports.
+"ansible/plugins/**/*.py" = ["E402"]

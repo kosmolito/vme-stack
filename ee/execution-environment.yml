@@ -1,0 +1,58 @@
+---
+# vme-stack execution environment: tooling + the vme-stack code (baked in).
+# Build with ee/build.sh (stages the committed code from ansible).
+version: 3
+
+images:
+  base_image:
+    # Red Hat UBI 9 minimal (no compilers/s2i tooling); Python 3.12 is
+    # installed from the UBI repositories (cdn-ubi.redhat.com).
+    # ansible-core 2.21 needs Python >= 3.12.
+    name: registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+dependencies:
+  python_interpreter:
+    package_system: python3.12 python3.12-pip
+    python_path: /usr/bin/python3.12
+  ansible_core:
+    package_pip: ansible-core==2.21.5
+  ansible_runner:
+    package_pip: ansible-runner
+  python: requirements.txt
+  system: bindep.txt
+  galaxy:
+    collections: []            # the pipeline only uses ansible.builtin
+
+options:
+  package_manager_path: /usr/bin/microdnf
+  # Our entrypoint (hotfix rule) runs first, then the EE's own one via dumb-init.
+  container_init:
+    package_pip: dumb-init
+    entrypoint: '["/usr/local/bin/vme-stack-entrypoint"]'
+    cmd: '["bash"]'
+  tags:
+    - vme-stack-ee:latest
+
+additional_build_files:
+  - src: _stage/code
+    dest: code
+  - src: files/vme-stack-entrypoint
+    dest: scripts
+
+additional_build_steps:
+  append_final:
+    - COPY _build/code /opt/vme-stack/code
+    - COPY _build/scripts/vme-stack-entrypoint /usr/local/bin/vme-stack-entrypoint
+    - RUN chmod 0755 /usr/local/bin/vme-stack-entrypoint && chmod -R a+rX /opt/vme-stack
+    # Rendered seeds and other run output go to build/ in the code dir: writable for
+    # the EE user (uid 1000 or any uid, always group 0). Lost with the container.
+    - RUN mkdir -p /opt/vme-stack/code/build && chgrp 0 /opt/vme-stack/code/build && chmod 0775 /opt/vme-stack/code/build
+    - ARG VME_STACK_VERSION=dev
+    - ARG VME_TESTED=""
+    - ARG VME_SOURCE=""
+    - ENV VME_STACK_VERSION=${VME_STACK_VERSION}
+    - LABEL org.opencontainers.image.title="vme-stack-ee"
+    - LABEL org.opencontainers.image.version="${VME_STACK_VERSION}"
+    - LABEL org.opencontainers.image.source="${VME_SOURCE}"
+    - LABEL io.vme-stack.tested-with="${VME_TESTED}"
+    - WORKDIR /opt/vme-stack/code

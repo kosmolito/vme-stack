@@ -1,0 +1,11 @@
+---
+# Set up the deploy server's nginx + xorriso once. Runs as part of the hvm
+# play (tasks are delegated), so --limit <host> still reaches the deploy server.
+- name: Media server
+  hosts: hvm
+  gather_facts: false
+  tasks:
+    - name: Set up the media server
+      ansible.builtin.include_role:
+        name: media_server
+      run_once: true

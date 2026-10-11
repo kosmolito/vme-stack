@@ -1,0 +1,14 @@
+---
+# ansible-lint for the vme-stack Ansible project (CI: .github/workflows/ci.yml)
+profile: production
+exclude_paths:
+  - ansible/build/
+  - ansible/roles/baremetal_lifecycle/   # vendored from the user's other repo; lint it there
+  - ee/context/
+  - .github/
+  - .venv/
+skip_list:
+  # Several facts are deliberately shared between roles (e.g. host_state ->
+  # install_now, read by seed/media/wait_ssh/postinstall; media -> host_iso_url,
+  # read by the boot drivers). Role-prefixed names would obscure that contract.
+  - var-naming[no-role-prefix]

@@ -1,0 +1,129 @@
+#cloud-config
+{#
+  HPE's seed from the site's HVM ISO (/server/user-data, read by the seed
+  role) with our answers merged in: its four interactive-sections (storage,
+  identity, network, proxy) answered, plus the timezone and the install proof.
+  Everything else stays as HPE ships it on that ISO.
+#}
+{% set answers %}
+# Live installer session only (not the installed system): a login for the
+# pipeline to recognise this host's install in progress (host_state reads the
+# cloud-init instance-id). 'installer' stays as shipped: its shell is the
+# installer client, which ignores commands.
+users:
+  - default
+  - name: vme-stack-probe
+    shell: /bin/sh
+    lock_passwd: true
+    ssh_authorized_keys: {{ ssh_keys | to_json }}
+
+autoinstall:
+{% if timezone is defined %}
+  timezone: "{{ timezone }}"
+{% endif %}
+{% if netplan is defined %}
+  # Raw netplan from the site file (edge cases), verbatim.
+  network: {{ netplan | to_json }}
+{% else %}
+  # Two NIC layouts (nics.layout), members always matched by MAC:
+  #   dedicated: bond0 = mgmt (IP on bond0.<mgmt_vlan>, or bond0 if vlan 0),
+  #              bond1 = compute, no IP (hpe-vm: -m bond0.<vlan> -c bond1)
+  #   shared:    bond0 carries everything; IP untagged on bond0, the switch
+  #              native VLAN must be the mgmt VLAN (hpe-vm: -m bond0)
+  # Bond defaults mirror the official TUI procedure (active-backup).
+{% set tagged = nics.layout == 'dedicated' and mgmt_vlan | default(0) | int > 0 %}
+{% macro l3() %}
+        addresses: ["{{ ip }}/{{ prefix }}"]
+        routes:
+          - to: default
+            via: {{ gateway }}
+        nameservers:
+          addresses: {{ dns | to_json }}
+          search: ["{{ domain }}"]
+{% endmacro %}
+  network:
+    version: 2
+    ethernets:
+{% for mac in nics.mgmt %}
+      mgmt{{ loop.index0 }}:
+        match:
+          macaddress: "{{ mac }}"
+        set-name: mgmt{{ loop.index0 }}
+{% endfor %}
+{% if nics.layout == 'dedicated' %}
+{% for mac in nics.compute %}
+      cmpt{{ loop.index0 }}:
+        match:
+          macaddress: "{{ mac }}"
+        set-name: cmpt{{ loop.index0 }}
+{% endfor %}
+{% endif %}
+    bonds:
+      bond0:
+        interfaces: [{% for mac in nics.mgmt %}mgmt{{ loop.index0 }}{{ ', ' if not loop.last }}{% endfor %}]
+        parameters:
+          mode: {{ bond_mode | default('active-backup') }}
+          mii-monitor-interval: 100
+{% if not tagged %}
+{{ l3() }}
+{%- endif %}
+{% if nics.layout == 'dedicated' %}
+      bond1:
+        interfaces: [{% for mac in nics.compute %}cmpt{{ loop.index0 }}{{ ', ' if not loop.last }}{% endfor %}]
+        parameters:
+          mode: {{ bond_mode | default('active-backup') }}
+          mii-monitor-interval: 100
+{% endif %}
+{% if tagged %}
+    vlans:
+      bond0.{{ mgmt_vlan }}:
+        id: {{ mgmt_vlan }}
+        link: bond0
+{{ l3() }}
+{%- endif %}
+{% endif %}
+{% if storage is defined %}
+  # Raw storage section from the site file (edge cases), verbatim.
+  storage: {{ storage | to_json }}
+{% else %}
+  # "Use an entire disk" + LVM, root LV grown to the full disk (the TUI's
+  # manual ubuntu-lv resize step).
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+      # auto: smallest disk; /dev/<name>: that kernel device; else the site's
+      # installer match keys (glob patterns).
+{% set bd = boot_disk | default('auto') %}
+      match: {{ ({'size': 'smallest'} if bd == 'auto' else ({'path': bd} if bd is string else bd)) | to_json }}
+{% endif %}
+  ssh:
+    install-server: true
+    allow-pw: false
+    authorized-keys: {{ ssh_keys | to_json }}
+{% if proxy | default(none) %}
+  proxy: {{ proxy }}
+{% endif %}
+
+  late-commands:
+    # Install proof: the installed system gets the datasource "None", so keep the
+    # live installer's instance-id (<host>-<seed hash>, from meta-data).
+    - mkdir -p /target/etc/vme-stack && cp /var/lib/cloud/data/instance-id /target/etc/vme-stack/install-id
+
+  user-data:
+    hostname: {{ inventory_hostname }}
+    fqdn: {{ inventory_hostname }}.{{ domain }}
+    manage_etc_hosts: true
+    users:
+      - name: {{ admin_user | default('hvmadmin') }}
+        groups: [sudo]
+        shell: /bin/bash
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        lock_passwd: true
+        ssh_authorized_keys: {{ ssh_keys | to_json }}
+{% endset %}
+{# Ours win for keys both set; lists both set (late-commands) are HPE's, then ours. #}
+{% set hpe = hpe_seed | from_yaml %}
+{% set hpe_auto = hpe.autoinstall | dict2items | rejectattr('key', 'eq', 'interactive-sections') | items2dict %}
+{% set seed = (hpe | combine({'autoinstall': hpe_auto})) | combine(answers | from_yaml, recursive=True, list_merge='append') %}
+{{ seed | to_nice_yaml(indent=2, width=1000, sort_keys=False) }}

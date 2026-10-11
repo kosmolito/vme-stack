@@ -1,0 +1,83 @@
+---
+# Decide whether this host needs installing. A host that already answers SSH
+# with the expected hostname is left alone unless force_reinstall is set.
+- name: Guard - force_reinstall only with an explicit --limit
+  ansible.builtin.assert:
+    that: ansible_limit is defined
+    fail_msg: "force_reinstall reinstalls hosts; run it with --limit <host> so it cannot hit the whole inventory"
+  when: force_reinstall | bool
+
+- name: Probe for an SSH banner on {{ ansible_host }}
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: 22
+    search_regex: "SSH-2.0"
+    timeout: 10
+  delegate_to: "{{ probe_from }}"
+  register: ssh_probe
+  # Not failed_when: false; that also resets ssh_probe.failed, making a
+  # timeout look like a found banner.
+  ignore_errors: true
+
+- name: Note whether something answers SSH
+  ansible.builtin.set_fact:
+    host_was_up: "{{ ssh_probe is succeeded }}"
+
+- name: Log in to the existing host
+  ansible.builtin.command: hostname
+  register: existing_hostname
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when: host_was_up | bool
+
+# Our seed adds the live-session user vme-stack-probe with our keys; the live
+# cloud-init instance-id is <host>-<seed hash> (meta-data). So an install of
+# this host in progress is recognised instead of being taken for a foreign machine.
+- name: Look for this host's live installer
+  ansible.builtin.command: cat /var/lib/cloud/data/instance-id
+  vars:
+    ansible_user: vme-stack-probe
+  register: installer_probe
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - host_was_up | bool
+    - existing_hostname.stdout | default('') | trim != inventory_hostname
+
+- name: Set install state
+  ansible.builtin.set_fact:
+    hvm_installed: >-
+      {{ existing_hostname.stdout is defined and
+         existing_hostname.stdout | trim == inventory_hostname }}
+    # instance-id of this host's running installer, '' if none
+    installer_id: >-
+      {{ installer_probe.stdout | default('') | trim
+         if (installer_probe.stdout | default('') | trim).startswith(inventory_hostname ~ '-') else '' }}
+
+- name: Set whether the IP belongs to something else
+  ansible.builtin.set_fact:
+    ip_taken: >-
+      {{ host_was_up | bool and not hvm_installed | bool and installer_id | length == 0 }}
+
+- name: Decide whether to install
+  ansible.builtin.set_fact:
+    install_now: "{{ force_reinstall | bool or not hvm_installed | bool }}"
+
+- name: Guard - the IP must not belong to something else
+  ansible.builtin.assert:
+    that: not ip_taken | bool or force_reinstall | bool
+    fail_msg: >-
+      {{ ansible_host }} answers SSH but is not {{ inventory_hostname }}
+      (got '{{ existing_hostname.stdout | default('no login') | trim }}').
+      Check for an IP conflict, or rerun with -e force_reinstall=true --limit {{ inventory_hostname }}.
+
+- name: Report state
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}:
+      {{ 'reinstall forced' if force_reinstall | bool
+         else ('already installed, skipping install stages' if hvm_installed | bool
+         else ('its installer is running (' ~ installer_id ~ ')' if installer_id | length > 0
+         else 'not installed, installing')) }}

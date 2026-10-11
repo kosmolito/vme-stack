@@ -1,0 +1,44 @@
+- name: Get the ComputerSystem resource
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: GET
+    headers:
+      X-Auth-Token: "{{ session_token }}"
+    status_code:
+      - 200
+  register: boot_once_system_info
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+# Newer iDRAC generations (e.g. iDRAC10) expose the ComputerSystem's Boot
+# properties as read-only and require PATCHing the staged resource advertised
+# via @Redfish.Settings instead. Older generations (e.g. iDRAC9) don't expose
+# @Redfish.Settings here and accept a direct PATCH.
+- name: Determine the writable boot-override URI
+  ansible.builtin.set_fact:
+    boot_once_override_uri: "{{ boot_once_system_info.json['@Redfish.Settings'].SettingsObject['@odata.id']
+      if (boot_once_system_info.json['@Redfish.Settings'] is defined)
+      else '/redfish/v1/Systems/System.Embedded.1' }}"
+
+- name: Set the host to boot once from the VirtualMedia device
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}{{ boot_once_override_uri }}"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: PATCH
+    headers:
+      X-Auth-Token: "{{ session_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      Boot:
+        BootSourceOverrideTarget: "{{ srv_BootSourceOverrideTarget }}"
+        BootSourceOverrideEnabled: "Once"
+    status_code:
+      - 200
+      - 201
+      - 204
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Pause for 5 seconds
+  ansible.builtin.pause:
+    seconds: 5

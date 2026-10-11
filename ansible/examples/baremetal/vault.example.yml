@@ -1,0 +1,15 @@
+# Copy to group_vars/all/vault.yml, fill in, then: ansible-vault encrypt group_vars/all/vault.yml
+vault_vme_admin: "<Manager admin password>"
+vault_hvm_admin_password: "<password of the hosts' admin user>"
+# vault_vme_license: "<VME license key>"
+# Key pair the Manager uses to reach the hosts: ssh-keygen -t ed25519 -N '' -f mgr
+vault_vme_manager_ssh_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  ...
+  -----END OPENSSH PRIVATE KEY-----
+vault_vme_manager_ssh_public_key: "ssh-ed25519 AAAA... vme-manager"
+# vCenter login, named by vme_clouds[].vcenter.credentials (clouds on one vCenter can share it)
+vault_vcenter: { username: "<user>@vsphere.local", password: "<vCenter password>" }
+# BMC logins, named by hosts[].bmc.credentials
+vault_ilo: { username: "<iLO user>", password: "<iLO password>" }
+vault_idrac: { username: "<iDRAC user>", password: "<iDRAC password>" }

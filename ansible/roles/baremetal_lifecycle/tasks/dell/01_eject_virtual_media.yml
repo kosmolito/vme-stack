@@ -1,0 +1,40 @@
+- block:
+    - name: Eject any current virtual media
+      ansible.builtin.uri:
+        url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1/VirtualMedia/1/Actions/VirtualMedia.EjectMedia"
+        validate_certs: "{{ srv_validate_certs }}"
+        method: POST
+        headers:
+          X-Auth-Token: "{{ session_token }}"
+          Content-Type: "application/json"
+        body: '{}'
+        body_format: json
+        status_code:
+          - 200
+          - 201
+          - 204
+      no_log: "{{ srv_mask_sensitive_output }}"
+  rescue:
+    # Backward compatibility: iDRAC generations older than iDRAC9 6.00 (14G/15G/16G)
+    # don't expose Systems/System.Embedded.1/VirtualMedia and require the legacy
+    # Managers/iDRAC.Embedded.1/VirtualMedia/CD path instead.
+    - name: Eject any current virtual media (legacy path for iDRAC < 9 6.00)
+      ansible.builtin.uri:
+        url: "https://{{ srv_ip }}/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD/Actions/VirtualMedia.EjectMedia"
+        validate_certs: "{{ srv_validate_certs }}"
+        method: POST
+        headers:
+          X-Auth-Token: "{{ session_token }}"
+          Content-Type: "application/json"
+        body: '{}'
+        body_format: json
+        status_code:
+          - 200
+          - 201
+          - 204
+      no_log: "{{ srv_mask_sensitive_output }}"
+      ignore_errors: true
+
+- name: Pause for 5 seconds
+  ansible.builtin.pause:
+    seconds: 5

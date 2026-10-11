@@ -1,0 +1,9 @@
+---
+# Stage 1 on its own: validate the site file and the environment; changes nothing.
+#   ansible-playbook preflight.yml -i ../sites/<site>/site.yml
+- name: Preflight
+  hosts: hvm
+  gather_facts: false
+  any_errors_fatal: true
+  roles:
+    - preflight

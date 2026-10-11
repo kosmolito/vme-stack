@@ -1,0 +1,107 @@
+# vme-stack tasks (https://taskfile.dev). `task --list` shows them all.
+#
+#   task check                    lint + tests, as CI runs them
+#   task release VERSION=0.1.1    checks, bump, changelog, commit, tag (local only)
+#   task release:push             push main + the tag; the ee-release workflow builds the image
+#
+# The Python tools (ansible-lint, ruff, ...) live in .venv. `task setup` builds it from
+# requirements-dev.txt; lint and test run it first, so there is nothing to do by hand.
+# Install Docker (ee:*) yourself.
+version: "3"
+
+vars:
+  PYTHON: python3   # Python for .venv, 3.12 or newer; e.g. task setup PYTHON=python3.12
+  EE_VERSION:
+    sh: cat ee/VERSION
+
+tasks:
+  default:
+    cmds: [task --list]
+    silent: true
+
+  setup:
+    desc: Build .venv from requirements-dev.txt (skipped while that file is unchanged)
+    status:
+      # .venv keeps a copy of the requirements it was built from.
+      - cmp -s requirements-dev.txt .venv/requirements-dev.txt
+    preconditions:
+      - sh: '{{.PYTHON}} -c "import sys; assert sys.version_info >= (3, 12)"'
+        msg: "{{.PYTHON}} is missing or older than 3.12; run e.g. task setup PYTHON=python3.12"
+    cmds:
+      - rm -rf .venv
+      - '{{.PYTHON}} -m venv .venv'
+      - .venv/bin/pip install -q --disable-pip-version-check -r requirements-dev.txt
+      - cp requirements-dev.txt .venv/
+
+  clean:
+    desc: Remove .venv
+    cmds:
+      - rm -rf .venv
+
+  check:
+    desc: Lint and tests, as CI runs them
+    cmds:
+      - task: lint
+      - task: test
+
+  lint:
+    desc: ansible-lint, yamllint, ruff, shellcheck, actionlint
+    deps: [setup]
+    cmds:
+      - .venv/bin/ansible-lint            # paths and profile: .ansible-lint
+      - .venv/bin/yamllint .
+      - .venv/bin/ruff check
+      - .venv/bin/ruff format --check
+      - .venv/bin/shellcheck ee/build.sh ee/files/vme-stack-entrypoint
+      - .venv/bin/actionlint
+
+  test:
+    desc: Site files and rule cases, playbook syntax, release docs
+    deps: [setup]
+    cmds:
+      # every site file passes, every case in site_cases.yml fails with its message
+      - .venv/bin/python ansible/tests/check_sites.py sites/*/site.yml ansible/examples/*/site.yml --cases ansible/tests/site_cases.yml
+      # playbook syntax (the example site needs no vault)
+      - |
+        cd ansible
+        for pb in *.yml; do
+          ../.venv/bin/ansible-playbook "$pb" -i examples/baremetal/site.yml --syntax-check >/dev/null || exit 1
+        done
+      # CHANGELOG, tested-with table and image pins match ee/VERSION
+      - .venv/bin/python scripts/release.py docs
+
+  ee:build:
+    desc: Build the EE image from the committed code (options in ee/build.sh)
+    cmds:
+      - ee/build.sh
+
+  ee:smoke:
+    desc: Smoke-test the local image vme-stack-ee:<ee/VERSION>
+    cmds:
+      - docker run --rm vme-stack-ee:{{.EE_VERSION}} ansible --version
+      - docker run --rm vme-stack-ee:{{.EE_VERSION}} /usr/bin/python3.12 -c "import jsonschema, passlib"
+      - docker run --rm vme-stack-ee:{{.EE_VERSION}} ansible-inventory -i examples/baremetal/site.yml --graph
+      - docker run --rm vme-stack-ee:{{.EE_VERSION}} cat VERSION | grep -qx "{{.EE_VERSION}}"
+
+  release:
+    desc: "Check, bump, commit and tag a release: task release VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmds:
+      # refuses if: not X.Y.Z above the last tag, tree not clean, not on an up-to-date
+      # main, nothing under "## [Unreleased]" in CHANGELOG.md (OFFLINE=true: no fetch)
+      - python3 scripts/release.py preflight {{.VERSION}} {{if .OFFLINE}}--offline{{end}}
+      - task: check
+      # ee/VERSION, CHANGELOG section, tested-with row, image pins; commit "Release X.Y.Z"
+      - python3 scripts/release.py prepare {{.VERSION}}
+      - git tag v{{.VERSION}}
+      - echo "Tagged v{{.VERSION}}. Publish with -> task release:push"
+
+  release:push:
+    desc: Push main and the release tag (starts the ee-release workflow)
+    prompt: "Push main and v{{.EE_VERSION}} to origin?"
+    preconditions:
+      - sh: git rev-parse -q --verify "refs/tags/v{{.EE_VERSION}}" >/dev/null
+        msg: "tag v{{.EE_VERSION}} does not exist: run task release VERSION={{.EE_VERSION}} first"
+    cmds:
+      - git push origin main "v{{.EE_VERSION}}"

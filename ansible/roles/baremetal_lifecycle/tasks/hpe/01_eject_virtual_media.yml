@@ -1,0 +1,17 @@
+- name: Eject any current virtual media
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.EjectMedia"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: POST
+    headers:
+      X-Auth-Token: "{{ session_token }}"
+    status_code:
+      - 200
+      - 201
+      - 204
+  no_log: "{{ srv_mask_sensitive_output }}"
+  ignore_errors: true
+
+- name: Pause for 5 seconds
+  ansible.builtin.pause:
+    seconds: 5

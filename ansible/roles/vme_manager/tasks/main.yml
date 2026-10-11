@@ -1,0 +1,161 @@
+---
+# Deploy the VME Manager VM with HPE's own non-interactive installer on this
+# host: hpe-vm --install, which also builds the OVS mgmt bridge (-i).
+# No -c/-v: with them hpe-vm puts the Manager VM's NIC on the compute bridge,
+# tagged with the -v VLAN (seen 2026-10-10), not on the mgmt network its IP
+# belongs to. The compute bridge is set up at cluster creation instead.
+# Skipped when the Manager already answers.
+- name: Set the hpe-vm log path
+  ansible.builtin.set_fact:
+    hpe_vm_log: /var/log/vme-stack-hpe-vm-install.log
+
+- name: Check whether the Manager answers on {{ vme_manager.ip }}
+  ansible.builtin.uri:
+    url: "https://{{ vme_manager.ip }}/ping"
+    validate_certs: false
+    timeout: 10
+  delegate_to: "{{ probe_from }}"
+  register: vme_ping
+  failed_when: false
+
+- name: Install the Manager
+  when: vme_ping.status | default(0) != 200
+  block:
+    - name: Read memory and existing VMs
+      ansible.builtin.shell: |
+        set -o pipefail
+        awk '/^MemTotal/ {print int($2/1024/1024)}' /proc/meminfo
+        virsh list --all --name | grep -Fx {{ vme_manager.hostname | quote }} || true
+      args:
+        executable: /bin/bash
+      become: true
+      register: host_state_mgr
+      changed_when: false
+
+    # hpe-vm sizes: S = 12 GB, M = 16 GB, L = 32 GB for the Manager; keep >= 4 GB for the host.
+    - name: "Check the host has room for the Manager size: {{ vme_manager.size }}"
+      ansible.builtin.assert:
+        that: host_state_mgr.stdout_lines[0] | int >= need_gb
+        fail_msg: >-
+          {{ inventory_hostname }} has {{ host_state_mgr.stdout_lines[0] }} GB RAM; a size {{ vme_manager.size }}
+          Manager needs {{ need_gb }} GB here ({{ {'S': 12, 'M': 16, 'L': 32}[vme_manager.size] }} GB + 4 GB for the host)
+        quiet: true
+      vars:
+        need_gb: "{{ {'S': 12, 'M': 16, 'L': 32}[vme_manager.size] + 4 }}"
+
+    - name: Refuse to install over an existing Manager VM that does not answer
+      ansible.builtin.assert:
+        that: host_state_mgr.stdout_lines | length == 1
+        fail_msg: >-
+          A VM named {{ vme_manager.hostname }} already exists on {{ inventory_hostname }} but
+          https://{{ vme_manager.ip }}/ping does not answer. Check it (virsh list --all) instead of reinstalling.
+        quiet: true
+
+    # The output may contain the password: keep the files root-only
+    # (script(1) keeps an existing file's mode).
+    - name: Create the hpe-vm log files (root only)
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ item }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop: ["{{ hpe_vm_log }}", "{{ hpe_vm_log }}.rc"]
+      become: true
+
+    # Long-running and possibly terminal-hungry: run it as a transient systemd
+    # unit under script(1) (a pty), independent of our SSH session; output and
+    # exit code go to a root-only log on the host.
+    - name: "Start hpe-vm --install, which downloads: {{ vme_image_url }}"
+      ansible.builtin.command:
+        argv:
+          - systemd-run
+          - --unit=vme-stack-hpe-vm
+          - --collect
+          - --property=TimeoutStartSec=infinity
+          - /usr/bin/script
+          - -qefc
+          - "{{ hpe_vm_argv | map('quote') | join(' ') }}; echo $? > {{ hpe_vm_log }}.rc"
+          - "{{ hpe_vm_log }}"
+      vars:
+        hpe_vm_argv:
+          # hpe-vm rejects --option=value ("Invalid argument"); pass value separately.
+          - /usr/bin/hpe-vm
+          - --install
+          - --address
+          - "{{ vme_manager.ip }}"
+          - --netmask
+          - "{{ vme_manager.netmask }}"
+          - --gateway
+          - "{{ vme_manager.gateway }}"
+          - --dns
+          - "{{ vme_manager.dns | join(',') }}"
+          - --hostname
+          - "{{ vme_manager.hostname }}"
+          - --url
+          - "{{ vme_manager.url }}"
+          - --user
+          - "{{ vme_manager.admin_user }}"
+          - --pass
+          - "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+          - --qcow
+          - "{{ vme_image_url }}"
+          - --size
+          - "{{ vme_manager.size }}"
+          - --iface
+          - "{{ mgmt_interface }}"
+      become: true
+      changed_when: true
+      no_log: true
+
+    - name: Wait for hpe-vm to finish
+      ansible.builtin.systemd_service:
+        name: vme-stack-hpe-vm
+      become: true
+      register: hpe_vm_unit
+      until: hpe_vm_unit.status.ActiveState | default('inactive') != 'active'
+      retries: 180
+      delay: 30
+      changed_when: false
+      failed_when: false     # a collected (finished) transient unit no longer exists
+
+    - name: Read hpe-vm's exit code and output
+      ansible.builtin.shell: |
+        set -o pipefail
+        cat {{ hpe_vm_log }}.rc 2>/dev/null || echo none
+        { tail -n 60 {{ hpe_vm_log }} 2>/dev/null || true; } | sed 's/\x1b\[[0-9;]*[A-Za-z]//g; s/\r$//'
+      args:
+        executable: /bin/bash
+      become: true
+      register: hpe_vm_result
+      changed_when: false
+      no_log: true
+
+    # no_log above: the output may echo the password; show it masked.
+    - name: Show hpe-vm output
+      ansible.builtin.debug:
+        msg: "{{ hpe_vm_result.stdout_lines[1:]
+                 | map('replace', lookup('ansible.builtin.vars', vme_manager.admin_password_var), '********') | list }}"
+
+    - name: Check hpe-vm succeeded
+      ansible.builtin.assert:
+        that: hpe_vm_result.stdout_lines[0] | trim == '0'
+        fail_msg: >-
+          hpe-vm --install exited with {{ hpe_vm_result.stdout_lines[0] | trim }},
+          see its output above and {{ hpe_vm_log }} on {{ inventory_hostname }}
+        quiet: true
+
+# First boot of the appliance configures Morpheus; this takes a while.
+- name: "Wait for the Manager to answer /ping: {{ vme_manager.ip }}"
+  ansible.builtin.uri:
+    url: "https://{{ vme_manager.ip }}/ping"
+    validate_certs: false
+    timeout: 10
+  delegate_to: "{{ probe_from }}"
+  register: vme_ping_wait
+  until: vme_ping_wait.status | default(0) == 200
+  retries: 120
+  delay: 30
+
+- name: Manager VM autostart (site setting)
+  ansible.builtin.include_tasks: autostart.yml

@@ -1,0 +1,22 @@
+- name: "Set the bios settings - BootMode: {{ srv_BootMode }} SecureBootStatus: {{ srv_SecureBootStatus }}"
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}/redfish/v1/Systems/1/bios/settings"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: PATCH
+    headers:
+      X-Auth-Token: "{{ session_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body: 
+      Attributes:
+        BootMode: "{{ srv_BootMode }}"
+        SecureBootStatus: "{{ srv_SecureBootStatus }}"
+    status_code:
+      - 200
+      - 201
+      - 204
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Pause for 5 seconds
+  ansible.builtin.pause:
+    seconds: 5

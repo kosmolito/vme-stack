@@ -1,0 +1,23 @@
+---
+# yamllint for the repo. Ansible style needs long Jinja lines and compact
+# flow maps, so the defaults are relaxed there; the rest stays default.
+extends: default
+ignore: |
+  ansible/build/
+  ansible/roles/baremetal_lifecycle/
+  ee/context/
+  .venv/
+rules:
+  line-length:
+    max: 160
+  document-start: disable
+  truthy:
+    check-keys: false
+  braces:
+    max-spaces-inside: 1
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

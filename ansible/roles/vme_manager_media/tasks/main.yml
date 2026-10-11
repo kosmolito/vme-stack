@@ -1,0 +1,77 @@
+---
+# Serve the VME Manager image straight from HPE's VM Essentials software ISO:
+# the deploy server keeps the ISO loop-mounted read-only inside the web root
+# (fstab, survives reboots) and nginx serves it at <media_url>/vme-iso/.
+# hpe-vm --install downloads the qcow2.gz from there; nothing is copied.
+# A loop mount also reads the image correctly: it is larger than 4 GiB, more
+# than ISO 9660 can describe, and xorriso extracts it truncated (8.1.1).
+- name: Set the mount point
+  ansible.builtin.set_fact:
+    vme_iso_mnt: "{{ media_www_root }}/vme-iso"
+
+- name: "Mount the VME ISO read-only in the web root: {{ vme_manager.vme_iso | basename }}"
+  delegate_to: "{{ deploy_host }}"
+  become: true
+  block:
+    - name: Read what is mounted there now
+      ansible.builtin.shell: |
+        dev=$(findmnt -no SOURCE {{ vme_iso_mnt | quote }} 2>/dev/null) || exit 0
+        losetup -nO BACK-FILE "$dev" 2>/dev/null || echo "$dev"
+      register: vme_iso_current
+      changed_when: false
+
+    - name: Unmount another ISO from the mount point
+      ansible.builtin.command:
+        argv: [umount, "{{ vme_iso_mnt }}"]
+      when:
+        - vme_iso_current.stdout | trim | length > 0
+        - vme_iso_current.stdout | trim != vme_manager.vme_iso
+      changed_when: true
+
+    - name: Create the mount point
+      ansible.builtin.file:
+        path: "{{ vme_iso_mnt }}"
+        state: directory
+        mode: "0755"
+      # Once mounted, the directory is the read-only ISO itself.
+      when: vme_iso_current.stdout | trim != vme_manager.vme_iso
+
+    - name: Keep the ISO mounted across reboots (fstab)
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^\S+\s+{{ vme_iso_mnt | regex_escape }}\s'
+        line: "{{ vme_manager.vme_iso }} {{ vme_iso_mnt }} udf,iso9660 ro,loop,nofail 0 0"
+
+    - name: Mount the ISO
+      ansible.builtin.command:
+        argv: [mount, "{{ vme_iso_mnt }}"]
+      when: vme_iso_current.stdout | trim != vme_manager.vme_iso
+      register: vme_iso_mounted
+      changed_when: true
+
+    # Once per (re)mount: reading 6.8 GB takes about a minute.
+    # Not a handler: the image must be verified here, before it is served.
+    - name: Check the ISO's files against its SHA256.txt  # noqa: no-handler
+      ansible.builtin.command: sha256sum -c --strict SHA256.txt
+      args:
+        chdir: "{{ vme_iso_mnt }}"
+      changed_when: false
+      when: vme_iso_mounted is changed
+
+- name: Find the Manager image on the ISO
+  ansible.builtin.find:
+    paths: "{{ vme_iso_mnt }}"
+    patterns: "*.qcow2.gz"
+  delegate_to: "{{ deploy_host }}"
+  register: vme_qcow
+  failed_when: vme_qcow.files | length != 1
+
+- name: Set the image URL
+  ansible.builtin.set_fact:
+    vme_image_url: "{{ media_url }}/vme-iso/{{ vme_qcow.files[0].path | basename }}"
+
+- name: Check the image URL answers from {{ inventory_hostname }}
+  ansible.builtin.uri:
+    url: "{{ vme_image_url }}"
+    method: HEAD
+  changed_when: false

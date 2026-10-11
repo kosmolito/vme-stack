@@ -1,0 +1,141 @@
+---
+# The Manager VM, once its host is in a cluster (from main.yml): disk onto a
+# shared datastore of that cluster (site setting), managed, autostart.
+# --- the Manager VM onto shared storage ----------------------------------------
+# hpe-vm puts the Manager's disk on the host's local pool. Its own "Reconfigure
+# server" (PUT /api/servers/<id>/resize) can move a volume to another datastore;
+# the local copy is kept (deleteOriginalVolumes: false).
+
+- name: Move the Manager VM's disk to {{ vme_manager.datastore | default('-') }}
+  when: vme_manager.datastore | default('', true) | length > 0
+  block:
+    - name: Find the Manager VM in the Manager
+      ansible.builtin.uri:
+        url: "{{ vme_api }}/servers?name={{ vme_manager.hostname | urlencode }}"
+        validate_certs: false
+        headers: "{{ vme_headers }}"
+      delegate_to: "{{ probe_from }}"
+      register: mgr_find
+      failed_when: mgr_find.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | list | length != 1
+
+    - name: Read the Manager VM and the target datastore
+      ansible.builtin.set_fact:
+        mgr_server: "{{ mgr_find.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | first }}"
+        mgr_target_ds: "{{ vme_manager_cluster_ds | selectattr('name', 'equalto', vme_manager.datastore) | first }}"
+
+    - name: Set the root volume
+      ansible.builtin.set_fact:
+        mgr_root: "{{ mgr_server.volumes | selectattr('rootVolume') | first }}"
+
+    - name: "Reconfigure the Manager VM, root volume to: {{ vme_manager.datastore }}"
+      ansible.builtin.uri:
+        url: "{{ vme_api }}/servers/{{ mgr_server.id }}/resize"
+        method: PUT
+        validate_certs: false
+        headers: "{{ vme_headers }}"
+        body_format: json
+        body:
+          server:
+            id: "{{ mgr_server.id }}"
+            plan: {id: "{{ mgr_server.plan.id }}"}
+          volumes: >-
+            {%- set out = [] -%}
+            {%- for v in mgr_server.volumes | sort(attribute='displayOrder') -%}
+            {{- out.append({'id': v.id, 'rootVolume': v.rootVolume, 'name': v.name,
+                             'size': (v.maxStorage / 1073741824) | round | int,
+                             'storageType': v.type.id,
+                             'datastoreId': (mgr_target_ds.id if v.rootVolume else (v.datastore.id if v.datastore else none))}) -}}
+            {%- endfor -%}
+            {{ out }}
+          deleteOriginalVolumes: false
+        timeout: 120
+      delegate_to: "{{ probe_from }}"
+      register: mgr_resize
+      when: (mgr_root.datastore.id | default(0)) != mgr_target_ds.id
+      changed_when: true
+
+    - name: Wait for the Manager's disk to be on {{ vme_manager.datastore }}
+      ansible.builtin.uri:
+        url: "{{ vme_api }}/servers/{{ mgr_server.id }}"
+        validate_certs: false
+        headers: "{{ vme_headers }}"
+      delegate_to: "{{ probe_from }}"
+      register: mgr_after
+      until: >-
+        mgr_after.status | default(0) == 200 and
+        ((mgr_after.json.server.volumes | selectattr('rootVolume') | first).datastore.id | default(0)) == mgr_target_ds.id
+      retries: 120
+      delay: 30
+      failed_when: false
+      when: mgr_resize is not skipped
+
+    - name: Wait for the Manager to answer again
+      ansible.builtin.uri:
+        url: "https://{{ vme_manager.ip }}/ping"
+        validate_certs: false
+        timeout: 10
+      delegate_to: "{{ probe_from }}"
+      register: mgr_ping
+      until: mgr_ping.status | default(0) == 200
+      retries: 60
+      delay: 30
+      when: mgr_resize is not skipped
+
+    - name: Check the move
+      ansible.builtin.assert:
+        that: >-
+          mgr_resize is skipped or
+          ((mgr_after.json.server.volumes | selectattr('rootVolume') | first).datastore.id | default(0)) == mgr_target_ds.id
+        fail_msg: "The Manager's root volume is not on {{ vme_manager.datastore }}; check the server's history in the Manager"
+        success_msg: "The Manager's root volume is on {{ vme_manager.datastore }}"
+
+# --- the Manager VM as a managed VM ---------------------------------------------
+# hpe-vm's VM is only "discovered" (kvmUnmanaged). Convert to managed, as the
+# UI's "Convert to Managed": owned by its cluster's group, the Manager can
+# operate it like any other VM. No agent is installed into the Manager VM.
+
+- name: Read the Manager VM's record
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/servers?name={{ vme_manager.hostname | urlencode }}"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: mgr_rec
+  failed_when: mgr_rec.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | list | length != 1
+
+- name: Convert the Manager VM to managed
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/servers/{{ mgr_vm.id }}/make-managed"
+    method: PUT
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      server:
+        sshUsername: "{{ vme_manager.admin_user }}"
+        sshPassword: "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+        provisionSiteId: "{{ vme_group_ids[vme_manager_group] | int }}"
+      installAgent: false
+    timeout: 120
+  vars:
+    mgr_vm: "{{ mgr_rec.json.servers | selectattr('name', 'equalto', vme_manager.hostname) | first }}"
+  delegate_to: "{{ probe_from }}"
+  register: mgr_managed
+  when: mgr_vm.computeServerType.code is search('[Uu]nmanaged')
+  changed_when: true
+  failed_when: false
+  no_log: true
+
+- name: Check the conversion
+  ansible.builtin.assert:
+    that: mgr_managed is skipped or (mgr_managed.status | default(0) in [200, 201] and mgr_managed.json.success | default(true))
+    fail_msg: >-
+      Convert to managed failed: HTTP {{ mgr_managed.status | default('?') }}
+      {{ mgr_managed.json.msg | default('') }} {{ mgr_managed.json.errors | default({}) }}
+    quiet: true
+
+# A storage move redefines the VM; apply the autostart setting again.
+- name: Manager VM autostart (site setting)
+  ansible.builtin.include_role:
+    name: vme_manager
+    tasks_from: autostart.yml

@@ -1,0 +1,141 @@
+---
+# The deploy server builds per-host ISOs (xorriso) and serves them over HTTP
+# (nginx) to BMCs and hypervisors. Debian/Ubuntu (apt) or RHEL family (dnf);
+# SELinux is switched to permissive, an active firewall gets the media port. Tasks are
+# delegated, so this works under --limit <host> too; call it once per run
+# (linear play, run_once).
+- name: Read the deploy server's package manager, SELinux and firewall state
+  ansible.builtin.shell: |
+    set -o pipefail
+    if command -v apt-get >/dev/null; then echo apt; elif command -v dnf >/dev/null; then echo dnf; else echo none; fi
+    if command -v getenforce >/dev/null; then getenforce; else echo Disabled; fi
+    systemctl is-active firewalld 2>/dev/null || true
+    if command -v ufw >/dev/null; then { sudo -n ufw status 2>/dev/null || echo "Status: unknown"; } | head -1; else echo "Status: none"; fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ deploy_host }}"
+  register: deploy_os_raw
+  changed_when: false
+
+- name: Remember the deploy server's state
+  ansible.builtin.set_fact:
+    deploy_pkg: "{{ deploy_os_raw.stdout_lines[0] }}"
+    deploy_selinux: "{{ deploy_os_raw.stdout_lines[1] | trim == 'Enforcing' }}"
+    deploy_firewalld: "{{ deploy_os_raw.stdout_lines[2] | trim == 'active' }}"
+    deploy_ufw: "{{ deploy_os_raw.stdout_lines[3] | trim == 'Status: active' }}"
+
+- name: Install nginx and xorriso (apt)
+  ansible.builtin.apt:
+    name: [nginx, xorriso]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  when: deploy_pkg == 'apt'
+
+- name: Install nginx and xorriso (dnf)
+  ansible.builtin.dnf:
+    name: [nginx, xorriso]
+    state: present
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  when: deploy_pkg == 'dnf'
+
+# The user the pipeline works as there (ssh user, or the local user with connection: local).
+- name: Read the deploy server's login user
+  ansible.builtin.command: id -un
+  delegate_to: "{{ deploy_host }}"
+  register: deploy_login
+  changed_when: false
+
+- name: Create media directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ deploy_login.stdout }}"
+    mode: "0755"
+  loop:
+    - "{{ media_www_root }}"
+    - "{{ media_www_root }}/isos"
+    - "{{ media_work_dir }}"
+  become: true
+  delegate_to: "{{ deploy_host }}"
+
+# --- SELinux: off on the deploy server (decided 2026-10-11) --------------------
+# Permissive instead of disabled: takes effect at once and survives reboots
+# (disabling needs a reboot and, on RHEL 9, a kernel argument).
+- name: Switch SELinux to permissive
+  when: deploy_selinux | bool
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  block:
+    - name: Stop enforcing now
+      ansible.builtin.command: setenforce 0
+      changed_when: true
+
+    - name: Stay permissive after reboots
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: SELINUX=permissive
+
+# --- Firewall (when active): open the media port --------------------------------
+- name: "Open the media port in firewalld: {{ media_port }}"
+  ansible.builtin.shell: |
+    firewall-cmd --query-port={{ media_port }}/tcp >/dev/null && exit 0
+    firewall-cmd --permanent --add-port={{ media_port }}/tcp && firewall-cmd --reload && echo changed
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  register: fw_port
+  changed_when: "'changed' in fw_port.stdout"
+  when: deploy_firewalld | bool
+
+- name: "Open the media port in ufw: {{ media_port }}"
+  ansible.builtin.shell: |
+    set -o pipefail
+    status=$(ufw status)
+    grep -qE '^{{ media_port }}/tcp\s+ALLOW' <<< "$status" && exit 0
+    ufw allow {{ media_port }}/tcp && echo changed
+  args:
+    executable: /bin/bash
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  register: ufw_port
+  changed_when: "'changed' in ufw_port.stdout"
+  when: deploy_ufw | bool
+
+# conf.d is included by nginx on both families (sites-enabled only on Debian).
+- name: Configure the nginx media site
+  ansible.builtin.template:
+    src: nginx-site.conf.j2
+    dest: /etc/nginx/conf.d/vme-stack.conf
+    mode: "0644"
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  notify: Reload nginx
+
+- name: Remove the media site from its old place (sites-enabled, older versions)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/vme-stack.conf
+    state: absent
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  notify: Reload nginx
+
+- name: Start nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: started
+    enabled: true
+  become: true
+  delegate_to: "{{ deploy_host }}"
+
+- name: Apply nginx changes now
+  ansible.builtin.meta: flush_handlers
+
+- name: Check the media URL answers
+  ansible.builtin.uri:
+    url: "{{ media_url }}/isos/"
+    status_code: 200
+  delegate_to: "{{ deploy_host }}"

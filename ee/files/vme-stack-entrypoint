@@ -1,0 +1,26 @@
+#!/bin/bash
+# vme-stack EE entrypoint. Code location:
+#   /vme-stack-hotfix not mounted       -> the image's code
+#   /vme-stack-hotfix mounted and empty -> copy the image's code into it, use it
+#   /vme-stack-hotfix mounted with code -> use it as it is (nothing copied)
+set -e
+IMAGE_CODE=/opt/vme-stack/code
+HOTFIX=/vme-stack-hotfix
+CODE=$IMAGE_CODE
+
+if [ -d "$HOTFIX" ]; then
+    if [ -z "$(ls -A "$HOTFIX")" ]; then
+        cp -a "$IMAGE_CODE"/. "$HOTFIX"/
+        echo "$VME_STACK_VERSION" > "$HOTFIX/VERSION"
+        echo "vme-stack $VME_STACK_VERSION: image code copied to $HOTFIX (edit it on the host)" >&2
+    fi
+    CODE=$HOTFIX
+    echo "vme-stack $VME_STACK_VERSION: using HOTFIX code from $HOTFIX (based on $(cat "$HOTFIX/VERSION" 2>/dev/null || echo unknown))" >&2
+else
+    echo "vme-stack $VME_STACK_VERSION" >&2
+fi
+
+cd "$CODE"
+export ANSIBLE_CONFIG="$CODE/ansible.cfg"
+# The EE entrypoint (user/passwd handling of ansible-runner images) under dumb-init.
+exec /opt/builder/bin/entrypoint dumb-init "$@"

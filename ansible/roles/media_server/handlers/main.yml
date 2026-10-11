@@ -1,0 +1,7 @@
+---
+- name: Reload nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+  become: true
+  delegate_to: "{{ deploy_host }}"

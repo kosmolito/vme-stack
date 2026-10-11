@@ -1,0 +1,10 @@
+---
+# Boot driver "manual": the pipeline does not control this machine (a VM created
+# by Terraform, or a server without a driver). It publishes the ISO and waits;
+# someone or something else boots the host from host_iso_url.
+- name: "Boot the host from its ISO now: {{ inventory_hostname }}"
+  ansible.builtin.debug:
+    msg:
+      - "Attach and boot {{ inventory_hostname }} from: {{ host_iso_url }}"
+      - "(also in build/{{ inventory_hostname }}/iso_url; lab: terraform apply in lab/terraform)"
+      - "Waiting up to {{ (wait_ssh_timeout | int / 60) | int }} min for the installed system."

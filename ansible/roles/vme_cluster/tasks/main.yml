@@ -1,0 +1,252 @@
+---
+# Stage 7: the site's Manager objects through the Manager API (the Terraform
+# provider has no HVM cluster resource): groups, clouds (HVM private clouds and
+# vCenter integrations) and HVM clusters, each found by name or created; never
+# changed or deleted once there. The Manager then SSHes into each cluster's
+# hosts (with its own key pair) and sets them up.
+# API calls go from probe_from (the deploy server reaches the Manager).
+- name: Set API facts
+  ansible.builtin.set_fact:
+    vme_api: "https://{{ vme_manager.ip }}/api"
+    vme_cluster_hosts: "{{ vme_clusters | map(attribute='hosts') | flatten }}"
+
+- name: Let the Manager's key into the cluster hosts' admin user
+  ansible.builtin.lineinfile:
+    path: "/home/{{ hostvars[item].admin_user }}/.ssh/authorized_keys"
+    line: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_public_key_var) }}"
+    create: true
+    mode: "0600"
+  delegate_to: "{{ item }}"
+  loop: "{{ vme_cluster_hosts }}"
+
+- name: Log in to the Manager
+  ansible.builtin.uri:
+    url: "https://{{ vme_manager.ip }}/oauth/token?grant_type=password&scope=write&client_id=morph-api"
+    method: POST
+    validate_certs: false
+    body_format: form-urlencoded
+    body:
+      username: "{{ vme_manager.admin_user }}"
+      password: "{{ lookup('ansible.builtin.vars', vme_manager.admin_password_var) }}"
+  delegate_to: "{{ probe_from }}"
+  register: vme_login
+  no_log: true
+
+- name: Set the API headers
+  ansible.builtin.set_fact:
+    vme_headers:
+      Authorization: "Bearer {{ vme_login.json.access_token }}"
+  no_log: true
+
+# --- groups --------------------------------------------------------------------
+
+- name: List the groups
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/groups?max=1000"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: grp_list
+
+- name: Create groups
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/groups"
+    method: POST
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body: {group: {name: "{{ item }}"}}
+  delegate_to: "{{ probe_from }}"
+  loop: "{{ vme_groups | difference(grp_list.json.groups | map(attribute='name')) }}"
+  register: grp_new
+  changed_when: true
+
+- name: Remember the group ids
+  ansible.builtin.set_fact:
+    vme_group_ids: >-
+      {{ dict(grp_list.json.groups | map(attribute='name') | zip(grp_list.json.groups | map(attribute='id')))
+         | combine(dict(grp_new.results | map(attribute='item') | zip(grp_new.results | map(attribute='json.group.id')))) }}
+
+# --- clouds ------------------------------------------------------------------------
+# hvm: the Manager's private cloud type (standard); vmware: a vCenter cloud, which
+# the Manager then syncs (vme-stack creates nothing inside vCenter).
+
+- name: List the clouds
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/zones?max=1000"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: zone_list
+
+- name: Check the vCenter credentials in the vault
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.vars', item.vcenter.credentials_var, default={}) is mapping
+      - lookup('ansible.builtin.vars', item.vcenter.credentials_var, default={}).username | default('') | length > 0
+      - lookup('ansible.builtin.vars', item.vcenter.credentials_var, default={}).password | default('') | length > 0
+    fail_msg: "cloud {{ item.name }}: vault variable {{ item.vcenter.credentials_var }} must be {username, password}"
+    quiet: true
+  loop: "{{ vme_clouds | selectattr('type', 'equalto', 'vmware') }}"
+  loop_control:
+    label: "{{ item.name }}: {{ item.vcenter.credentials_var }}"
+  no_log: true
+
+- name: Create clouds
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/zones"
+    method: POST
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      zone: >-
+        {{ {'name': item.name, 'zoneType': {'code': 'standard' if item.type == 'hvm' else 'vmware'},
+            'groupId': vme_group_ids[item.groups[0]] | int}
+           | combine({} if item.type != 'vmware' else {
+               'credential': {'type': 'local'},
+               'config': {'apiUrl': vc_url if vc_url.endswith('/sdk') else vc_url ~ '/sdk', 'username': vc_cred.username,
+                          'password': vc_cred.password,
+                          'datacenter': item.vcenter.datacenter, 'cluster': item.vcenter.cluster,
+                          'importExisting': 'off'}}) }}
+    status_code: [200, 201]
+    timeout: 120
+  vars:
+    vc_cred: "{{ lookup('ansible.builtin.vars', item.vcenter.credentials_var) if item.type == 'vmware' else {} }}"
+    vc_url: "{{ item.vcenter.url | default('') | regex_replace('/+$', '') }}"
+  delegate_to: "{{ probe_from }}"
+  loop: "{{ vme_clouds | rejectattr('name', 'in', zone_list.json.zones | map(attribute='name')) }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.type }})"
+  register: zone_new
+  failed_when: false
+  changed_when: true
+  no_log: true
+
+# no_log above (a vCenter request carries the password); report the API's answer.
+- name: Check the clouds were created
+  ansible.builtin.assert:
+    that: item.status | default(0) in [200, 201] and item.json.success | default(true)
+    fail_msg: >-
+      Creating cloud {{ item.item.name }} failed: HTTP {{ item.status | default('?') }}
+      {{ item.json.msg | default('') }} {{ item.json.errors | default({}) }}
+    quiet: true
+  loop: "{{ zone_new.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Remember the cloud ids
+  ansible.builtin.set_fact:
+    vme_cloud_ids: >-
+      {{ dict(zone_list.json.zones | map(attribute='name') | zip(zone_list.json.zones | map(attribute='id')))
+         | combine(dict(zone_new.results | map(attribute='item.name') | zip(zone_new.results | map(attribute='json.zone.id')))) }}
+
+# Created with the import off; vcenter_import.yml switches it on once the cloud is up.
+- name: Import the existing VMs of vCenter clouds
+  ansible.builtin.include_tasks: vcenter_import.yml
+  loop: "{{ vme_clouds | selectattr('type', 'equalto', 'vmware') | selectattr('vcenter.import_existing') }}"
+  loop_control:
+    loop_var: vc
+    label: "{{ vc.name }}"
+
+# A cloud is created in its first group; add it to the others. Only adds:
+# clouds put into a group by hand stay there.
+- name: Read the groups' clouds
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/groups?max=1000"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: grp_zones
+
+- name: Add clouds to their groups
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/groups/{{ grp.id }}/update-zones"
+    method: PUT
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      group:
+        zones: >-
+          {%- set out = [] -%}
+          {%- for z in (grp.zones | map(attribute='id') | list + wanted) | unique -%}{{ out.append({'id': z}) }}{%- endfor -%}
+          {{ out }}
+  vars:
+    grp: "{{ grp_zones.json.groups | selectattr('name', 'equalto', item) | first }}"
+    wanted: "{{ vme_clouds | selectattr('groups', 'contains', item) | map(attribute='name') | map('extract', vme_cloud_ids) | list }}"
+  delegate_to: "{{ probe_from }}"
+  loop: "{{ vme_groups }}"
+  when: wanted | difference(grp.zones | map(attribute='id')) | length > 0
+  changed_when: true
+
+# --- the Manager's SSH key pair ------------------------------------------------
+# One key pair for all clusters, found by its public key (any name), else
+# stored as "<Manager hostname>-ssh".
+
+- name: List the key pairs
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/key-pairs?max=1000"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: key_list
+
+- name: Find the Manager's key pair by its public key
+  ansible.builtin.set_fact:
+    key_match: "{{ key_list.json.keyPairs | selectattr('publicKey', 'search', '^' ~ (pub.split()[:2] | join(' ') | regex_escape)) | list }}"
+  vars:
+    pub: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_public_key_var) }}"
+
+- name: Store the Manager's SSH key pair
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/key-pairs"
+    method: POST
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      keyPair:
+        name: "{{ vme_manager.hostname }}-ssh"
+        publicKey: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_public_key_var) }}"
+        privateKey: "{{ lookup('ansible.builtin.vars', vme_manager.ssh_private_key_var) }}"
+  delegate_to: "{{ probe_from }}"
+  register: key_new
+  when: key_match | length == 0
+  changed_when: true
+  no_log: true
+
+- name: Remember the key pair id
+  ansible.builtin.set_fact:
+    vme_key_id: "{{ key_new.json.keyPair.id if key_new is not skipped else (key_match | first).id }}"
+
+# --- clusters ---------------------------------------------------------------------
+
+- name: List the cluster layouts
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/library/cluster-layouts?max=200"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: layouts
+
+# Existing servers reached over SSH use the manual provision type's plan.
+- name: Find the service plan for existing hosts (manual-default)
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/service-plans?code=manual-default"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: plan_find
+  failed_when: plan_find.json.servicePlans | selectattr('code', 'equalto', 'manual-default') | list | length != 1
+
+- name: HVM clusters
+  ansible.builtin.include_tasks: cluster.yml
+  loop: "{{ vme_clusters }}"
+  loop_control:
+    loop_var: cl
+    label: "{{ cl.name }}"
+
+- name: The Manager VM
+  ansible.builtin.include_tasks: manager_vm.yml
+  when: vme_manager.host in vme_cluster_hosts

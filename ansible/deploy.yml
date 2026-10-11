@@ -1,0 +1,15 @@
+---
+# The whole pipeline for one site file, in order:
+#   preflight -> HVM hosts (media, boot, install, post-install)
+#   -> VME Manager (hpe-vm --install, first-time setup) -> HVM cluster
+#   ansible-playbook deploy.yml -i ../sites/<site>/site.yml --vault-password-file <file>
+# Each stage can also run on its own (hvm_hosts.yml, vme_manager.yml, vme_cluster.yml);
+# every stage skips what is already done, so re-running deploy.yml is safe.
+- name: HVM hosts
+  ansible.builtin.import_playbook: hvm_hosts.yml
+
+- name: VME Manager
+  ansible.builtin.import_playbook: vme_manager.yml
+
+- name: HVM cluster
+  ansible.builtin.import_playbook: vme_cluster.yml

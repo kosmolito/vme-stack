@@ -1,0 +1,4 @@
+# System packages (bindep format)
+openssh-clients [platform:rpm]
+procps-ng [platform:rpm]
+diffutils [platform:rpm]

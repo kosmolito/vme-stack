@@ -1,0 +1,35 @@
+- name: Power on the server
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: POST
+    headers:
+      X-Auth-Token: "{{ session_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      ResetType: "On"
+    status_code:
+      - 200
+      - 201
+      - 204
+  when: power_state == "Off"
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Reboot the server
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      X-Auth-Token: "{{ session_token }}"
+    body_format: json
+    body:
+      ResetType: "{{ srv_ResetType }}"
+    status_code:
+      - 200
+      - 201
+      - 204
+  when: power_state != "Off"
+  no_log: "{{ srv_mask_sensitive_output }}"

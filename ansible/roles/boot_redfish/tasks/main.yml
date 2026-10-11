@@ -1,0 +1,23 @@
+---
+# Boot driver "redfish": HPE iLO or Dell iDRAC through the vendored
+# baremetal_lifecycle role (vendor detected at run time): eject, insert
+# host_iso_url, optional BIOS setup, boot once from CD, power on or ForceRestart.
+# Runs only for hosts that need an install (host_state decides), so an installed
+# server is never reset. Needs a linear play (the role uses pause). Redfish calls
+# go from the controller; the BMC itself fetches the ISO from the media server.
+- name: "Boot the host from its ISO via its BMC: {{ bmc.address }}"
+  ansible.builtin.include_role:
+    name: baremetal_lifecycle
+    apply:
+      delegate_to: localhost
+  vars:
+    hosted_iso_file: "{{ host_iso_url }}"
+    srv_ip: "{{ bmc.address }}"
+    srv_username: "{{ lookup('ansible.builtin.vars', bmc.credentials).username }}"
+    srv_password: "{{ lookup('ansible.builtin.vars', bmc.credentials).password }}"
+    srv_validate_certs: "{{ bmc.validate_certs | default(false) }}"
+    eject_virtual_media: true
+    insert_virtual_media: true
+    bios_setup: "{{ bmc.bios_setup | default(false) }}"   # opt-in per host (site.yml)
+    boot_once_order: true
+    start_or_reboot: true

@@ -1,0 +1,60 @@
+---
+# Stages 1-5 for HVM hosts, driven by a site file:
+#   ansible-playbook hvm_hosts.yml -i ../sites/<site>/site.yml [--limit <host>]
+# Reinstall a host: -e force_reinstall=true --limit <host>
+# Redfish hosts: add the vault file with the BMC credentials, e.g.
+#   -e @secrets.vault.yml --ask-vault-pass
+- name: Preflight
+  ansible.builtin.import_playbook: preflight.yml
+
+- name: Media server
+  ansible.builtin.import_playbook: media_server.yml
+
+# Linear: the redfish driver (baremetal_lifecycle) uses pause, which the free
+# strategy does not support. Media is built per task for all hosts in parallel.
+- name: Build media and boot HVM hosts
+  hosts: hvm
+  gather_facts: false
+  tasks:
+    - name: Check host state
+      ansible.builtin.import_role:
+        name: host_state
+
+    - name: Install stages
+      when: install_now | bool
+      block:
+        - name: Render the seed
+          ansible.builtin.import_role:
+            name: seed
+        - name: Build and publish the install ISO
+          ansible.builtin.import_role:
+            name: media
+        - name: Note whether the host is already installing this ISO
+          ansible.builtin.set_fact:
+            install_running: "{{ installer_id == inventory_hostname ~ '-' ~ seed_sha }}"
+        # A manual host is booted by someone else: an installer from an older
+        # seed would only finish the wrong install. A driver reboots it instead.
+        - name: Guard - a running installer must be from this run's ISO
+          ansible.builtin.assert:
+            that: installer_id | length == 0 or install_running | bool or platform != 'manual'
+            fail_msg: >-
+              {{ inventory_hostname }} is installing from an older ISO ({{ installer_id }}).
+              Boot it from {{ host_iso_url }} and run again.
+        - name: Boot the host from its ISO (driver for its platform)
+          ansible.builtin.include_role:
+            name: "boot_{{ platform }}"
+          when: not install_running | bool
+
+# Free: each host continues as soon as it is up.
+- name: Wait for and post-install HVM hosts
+  hosts: hvm
+  gather_facts: false
+  strategy: free
+  tasks:
+    - name: Wait for the host
+      ansible.builtin.import_role:
+        name: wait_ssh
+
+    - name: Post-install and health check
+      ansible.builtin.import_role:
+        name: postinstall

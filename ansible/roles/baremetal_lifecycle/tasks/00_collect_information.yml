@@ -1,0 +1,72 @@
+- name: Create redfish session token
+  uri:
+    url: "https://{{ srv_ip }}/redfish/v1/SessionService/Sessions"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      UserName: "{{ srv_username | string }}"
+      Password: "{{ srv_password | string }}"
+    return_content: yes
+    status_code:
+      - 201
+  register: redfish_session
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Set session_token and session_id fact
+  ansible.builtin.set_fact:
+    session_token: "{{ redfish_session.x_auth_token }}"
+    session_id: "{{ redfish_session.json.Id }}"
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+
+- block:
+    - name: Try collect information from the machine (HPE-style Systems path)
+      ansible.builtin.uri:
+        url: "https://{{ srv_ip }}/redfish/v1/Systems/1/"
+        validate_certs: "{{ srv_validate_certs }}"
+        method: GET
+        headers:
+          X-Auth-Token: "{{ session_token }}"
+        status_code:
+          - 200
+          - 201
+          - 204
+      register: machine_info
+      no_log: "{{ srv_mask_sensitive_output }}"
+  rescue:
+    - name: Try collect information from the machine (Dell-style Systems path)
+      ansible.builtin.uri:
+        url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1"
+        validate_certs: "{{ srv_validate_certs }}"
+        method: GET
+        headers:
+          X-Auth-Token: "{{ session_token }}"
+        status_code:
+          - 200
+          - 201
+          - 204
+      register: machine_info
+      no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Fail when executed on NON-HPE or NON-Dell. machine
+  ansible.builtin.fail:
+    msg: "This playbook only supported on HPE and Dell machines."
+  when:
+    - '"Dell Inc." not in machine_info.json.Manufacturer'
+    - '"HPE" not in machine_info.json.Manufacturer'
+
+- name: Set vendor fact to hpe if hw_vendor is hpe
+  set_fact:
+    vendor: "hpe"
+  when: '"HPE" in machine_info.json.Manufacturer'
+
+- name: Set vendor fact to dell if hw_vendor is Dell inc.
+  set_fact:
+    vendor: "dell"
+  when: '"Dell Inc." in machine_info.json.Manufacturer'
+
+- set_fact:
+    power_state: "{{ machine_info.json.PowerState }}"

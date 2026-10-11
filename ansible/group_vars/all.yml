@@ -1,0 +1,6 @@
+# Tuning defaults for every site. Site data comes from the site file (-i ../sites/<site>/site.yml).
+
+# Install timeouts
+wait_ssh_timeout: 2700     # 45 min
+force_reinstall: false
+keep_host_iso: false       # delete the per-host ISO once the host is installed

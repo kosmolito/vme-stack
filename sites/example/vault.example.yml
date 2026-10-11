@@ -1,0 +1,25 @@
+# Every secret site.yml names. Template only: it is not loaded from here.
+# Copy to group_vars/all/vault.yml, fill in, then: ansible-vault encrypt group_vars/all/vault.yml
+
+# Hosts' admin user (defaults.admin_password); the Manager logs in with it to build clusters
+vault_hvm_admin_password: "<password of the hosts' admin user>"
+
+# BMC logins (hosts[].bmc.credentials)
+vault_ilo: { username: "<iLO user>", password: "<iLO password>" }
+vault_idrac: { username: "<iDRAC user>", password: "<iDRAC password>" }
+
+# Manager admin (vme_manager.admin_password)
+vault_vme_admin: "<Manager admin password>"
+# License key (vme_manager.license_key); without it the Manager starts a trial
+# vault_vme_license: "<VME license key>"
+
+# Key pair the Manager uses to reach every cluster's hosts (vme_manager.ssh_private_key /
+# ssh_public_key): ssh-keygen -t ed25519 -N '' -C vme-manager -f mgr
+vault_vme_manager_ssh_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  ...
+  -----END OPENSSH PRIVATE KEY-----
+vault_vme_manager_ssh_public_key: "ssh-ed25519 AAAA... vme-manager"
+
+# vCenter login (vme_clouds[].vcenter.credentials); clouds on one vCenter can share it
+vault_vcenter: { username: "<user>@vsphere.local", password: "<vCenter password>" }

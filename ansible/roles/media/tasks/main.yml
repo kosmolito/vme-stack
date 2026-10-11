@@ -1,0 +1,102 @@
+---
+# Build the per-host HVM install ISO on the deploy server and publish it over
+# HTTP: the stock ISO with /server/{user-data,meta-data} replaced by our seed and
+# GRUB timeout set to 0. The name carries the seed hash, so an unchanged seed is
+# not rebuilt. BMCs/hypervisors fetch it from host_iso_url.
+- name: Set ISO names
+  ansible.builtin.set_fact:
+    host_iso_name: "vme-stack-{{ inventory_hostname }}-{{ seed_sha }}.iso"
+    host_iso_url: "{{ media_url }}/isos/vme-stack-{{ inventory_hostname }}-{{ seed_sha }}.iso"
+    host_work: "{{ media_work_dir }}/{{ inventory_hostname }}"
+
+- name: Check source ISO exists
+  ansible.builtin.stat:
+    path: "{{ hvm_src_iso }}"
+  delegate_to: "{{ deploy_host }}"
+  register: src_iso
+  failed_when: not src_iso.stat.exists
+
+- name: Check for an already built host ISO
+  ansible.builtin.stat:
+    path: "{{ media_www_root }}/isos/{{ host_iso_name }}"
+  delegate_to: "{{ deploy_host }}"
+  register: host_iso
+
+- name: Build host ISO
+  when: not host_iso.stat.exists
+  delegate_to: "{{ deploy_host }}"
+  block:
+    - name: Create work directory
+      ansible.builtin.file:
+        path: "{{ host_work }}"
+        state: directory
+        mode: "0755"
+
+    - name: Upload seed files
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/build/{{ inventory_hostname }}/{{ item }}"
+        dest: "{{ host_work }}/{{ item }}"
+        mode: "0644"
+      loop: [user-data, meta-data]
+
+    # xorriso treats an existing -outdev file as an image to add a session to;
+    # a leftover from an interrupted build must not be reused.
+    - name: Remove a leftover partial ISO
+      ansible.builtin.file:
+        path: "{{ host_work }}/{{ host_iso_name }}.partial"
+        state: absent
+
+    - name: Extract stock grub.cfg
+      ansible.builtin.command:
+        argv: [xorriso, -osirrox, "on", -indev, "{{ hvm_src_iso }}", -extract, /boot/grub/grub.cfg, "{{ host_work }}/grub.cfg"]
+        creates: "{{ host_work }}/grub.cfg"
+
+    - name: Make GRUB boot the installer without waiting
+      ansible.builtin.lineinfile:
+        path: "{{ host_work }}/grub.cfg"
+        regexp: '^set timeout=.*$'
+        line: "set timeout=0"
+
+    - name: Write ISO (stock content + our seed + grub.cfg)
+      ansible.builtin.command:
+        argv:
+          - xorriso
+          - -indev
+          - "{{ hvm_src_iso }}"
+          - -outdev
+          - "{{ host_work }}/{{ host_iso_name }}.partial"
+          - -boot_image
+          - any
+          - replay
+          - -map
+          - "{{ host_work }}/user-data"
+          - /server/user-data
+          - -map
+          - "{{ host_work }}/meta-data"
+          - /server/meta-data
+          - -map
+          - "{{ host_work }}/grub.cfg"
+          - /boot/grub/grub.cfg
+          - -commit
+          - -end
+      changed_when: true
+
+    # Built outside www_root and moved in whole, so nothing ever downloads a half-written ISO.
+    - name: Publish the finished ISO
+      ansible.builtin.command:
+        argv: [mv, "{{ host_work }}/{{ host_iso_name }}.partial", "{{ media_www_root }}/isos/{{ host_iso_name }}"]
+      changed_when: true
+
+    - name: Remove older ISOs of this host
+      ansible.builtin.shell: >-
+        find {{ media_www_root | quote }}/isos -maxdepth 1 -name 'vme-stack-{{ inventory_hostname }}-*.iso'
+        ! -name '{{ host_iso_name }}' -delete
+      changed_when: false
+
+# For tools that attach the ISO themselves (lab Terraform reads this file).
+- name: Record the ISO URL on the controller
+  ansible.builtin.copy:
+    content: "{{ host_iso_url }}\n"
+    dest: "{{ playbook_dir }}/build/{{ inventory_hostname }}/iso_url"
+    mode: "0644"
+  delegate_to: localhost

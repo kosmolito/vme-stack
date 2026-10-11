@@ -1,0 +1,210 @@
+---
+# Checks read the host directly, not ansible_facts: in two-host runs (strategy
+# free) a host's check once saw the other host's network facts (2026-10-10).
+- name: Read hostname
+  ansible.builtin.command: hostname
+  register: host_name
+  changed_when: false
+
+- name: Check hostname
+  ansible.builtin.assert:
+    that: host_name.stdout | trim == inventory_hostname
+    fail_msg: "Host answers as {{ host_name.stdout | trim }}, expected {{ inventory_hostname }}"
+
+- name: Read timezone
+  ansible.builtin.command: timedatectl show -p Timezone --value
+  register: tz_now
+  changed_when: false
+
+- name: Set timezone
+  ansible.builtin.command: "timedatectl set-timezone {{ timezone }}"
+  become: true
+  when: tz_now.stdout | trim != timezone
+  changed_when: true
+
+# NTP with the daemon HPE's image ships: systemd-timesyncd (as the official
+# guide says; HVM ISO for 8.1.1) or chrony (HVM ISO for 9.x: HPE's post-install
+# installs it, which removes timesyncd). The cluster and its storage need hosts
+# in sync; only the site file's servers are used.
+- name: Look for chrony
+  ansible.builtin.stat:
+    path: /usr/sbin/chronyd
+  register: chronyd
+
+- name: Configure timesyncd
+  when: not chronyd.stat.exists
+  become: true
+  block:
+    - name: Create timesyncd drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/timesyncd.conf.d
+        state: directory
+        mode: "0755"
+
+    - name: Configure timesyncd servers
+      ansible.builtin.copy:
+        dest: /etc/systemd/timesyncd.conf.d/vme-stack.conf
+        content: |
+          # Managed by vme-stack
+          [Time]
+          NTP={{ ntp_servers | join(' ') }}
+          FallbackNTP=
+        mode: "0644"
+      notify: Restart timesyncd
+
+- name: Configure chrony
+  when: chronyd.stat.exists
+  become: true
+  block:
+    - name: Configure chrony servers
+      ansible.builtin.copy:
+        dest: /etc/chrony/sources.d/vme-stack.sources
+        content: |
+          # Managed by vme-stack
+          {% for s in ntp_servers %}
+          server {{ s }} iburst
+          {% endfor %}
+        mode: "0644"
+      notify: Restart chrony
+
+    # Ubuntu's default pools would be used next to the site's servers.
+    - name: Switch off chrony's default pools
+      ansible.builtin.replace:
+        path: /etc/chrony/chrony.conf
+        regexp: '^(pool .*)$'
+        replace: '# vme-stack: site NTP servers in sources.d # \1'
+      notify: Restart chrony
+
+# Restart now, before waiting for the sync below.
+- name: Apply the NTP change
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for time sync against {{ ntp_servers | join(', ') }}
+  ansible.builtin.command: timedatectl show -p NTPSynchronized --value
+  register: ntp_sync
+  until: ntp_sync.stdout | trim == 'yes'
+  retries: 18
+  delay: 10
+  changed_when: false
+  failed_when: false         # warn only (decided 2026-10-09); a bad NTP source must not stop the run
+
+- name: Warn when time is not synchronised
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: clock not synchronised against {{ ntp_servers | join(', ') }} after 3 min.
+      Check the servers: {{ 'chronyc sources' if chronyd.stat.exists else 'timedatectl timesync-status (timesyncd rejects a root distance over 5 s)' }}
+  when: ntp_sync.stdout | default('') | trim != 'yes'
+
+# Password for the admin user (site: admin_password), e.g. for the VME Manager,
+# which needs user + password to create the cluster. Password SSH login is
+# allowed for this user only; everyone else stays key-only.
+- name: Admin password
+  when: admin_password_var | default("", true) | length > 0
+  block:
+    - name: Set the password of {{ admin_user }}
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        # Salt from the host name: same hash on every run, so no change reported.
+        password: "{{ lookup('ansible.builtin.vars', admin_password_var)
+                      | password_hash('sha512', (inventory_hostname ~ admin_user) | hash('sha256') | truncate(16, True, '')) }}"
+      become: true
+      no_log: true
+
+    - name: "Allow password SSH login for the admin user only: {{ admin_user }}"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-vme-stack-admin-password.conf
+        content: |
+          # Managed by vme-stack: the VME Manager logs in with user + password.
+          Match User {{ admin_user }}
+              PasswordAuthentication yes
+        mode: "0644"
+      become: true
+      notify: sshd config changed
+
+    - name: Check and reload sshd now
+      ansible.builtin.meta: flush_handlers
+
+# Bond checks for the generated layouts; a raw netplan is the site's own design.
+- name: Check bonds of the nics layout
+  when: nics is defined
+  block:
+    - name: Read bond state
+      ansible.builtin.command: "cat /proc/net/bonding/{{ item.bond }}"
+      register: bonds
+      changed_when: false
+      loop: "{{ [{'bond': 'bond0', 'members': nics.mgmt}] +
+                ([{'bond': 'bond1', 'members': nics.compute}] if nics.layout == 'dedicated' else []) }}"
+
+    - name: Check bond mode and members
+      ansible.builtin.assert:
+        that:
+          - "bond_mode in item.stdout"   # /proc shows e.g. 'fault-tolerance (active-backup)'
+          - item.stdout | regex_findall('Slave Interface') | length == item.item.members | length
+        fail_msg: "{{ item.item.bond }} does not match site: {{ item.stdout }}"
+      loop: "{{ bonds.results }}"
+      loop_control:
+        label: "{{ item.item.bond }}"
+
+# Before cluster join the IP sits on mgmt_interface; hpe-vm later moves it to the OVS bridge "mgmt".
+- name: "Read the IPv4 addresses of the mgmt interface and bridge: {{ mgmt_interface }}"
+  ansible.builtin.shell: |
+    set -o pipefail
+    for i in {{ mgmt_interface | quote }} mgmt; do ip -4 -o addr show dev "$i" 2>/dev/null || true; done | awk '{print $2, $4}'
+  args:
+    executable: /bin/bash
+  register: mgmt_addrs
+  changed_when: false
+
+- name: Check the management address sits on {{ mgmt_interface }}
+  ansible.builtin.assert:
+    that: mgmt_addrs.stdout_lines | map('split') | map(attribute=1) | map('regex_replace', '/.*$', '') | select('equalto', ip) | list | length > 0
+    fail_msg: "{{ ip }} is on neither {{ mgmt_interface }} nor the hpe-vm bridge mgmt (found: {{ mgmt_addrs.stdout_lines | join('; ') or 'nothing' }})"
+    quiet: true
+
+# Catches what no parser can: e.g. bond MTU above what the NICs support
+# (seen in the lab: members refused, bond1 left empty, nothing else failed).
+- name: Read networkd link states
+  ansible.builtin.command: networkctl list --no-legend --no-pager
+  register: links
+  changed_when: false
+
+- name: Check no interface failed to configure
+  ansible.builtin.assert:
+    that: failed_links | length == 0
+    fail_msg: >-
+      networkd could not configure: {{ failed_links | join(', ') }}.
+      See: journalctl -b -u systemd-networkd | grep -E '{{ failed_links | join('|') }}'
+    quiet: true
+  vars:
+    # columns: IDX LINK TYPE OPERATIONAL SETUP
+    failed_links: "{{ links.stdout_lines | map('split') | selectattr(4, 'equalto', 'failed') | map(attribute=1) | list }}"
+
+- name: Check the gateway answers
+  ansible.builtin.command: "ping -c3 -W2 {{ gateway }}"
+  register: gw_ping
+  changed_when: false
+  failed_when: false
+
+# Some gateways drop ICMP, so this only warns.
+- name: Warn when the gateway does not answer
+  ansible.builtin.debug:
+    msg: "WARNING: gateway {{ gateway }} does not answer ping from {{ inventory_hostname }}"
+  when: gw_ping.rc != 0
+
+# The ISO has served its purpose; it is rebuilt on the next install.
+- name: Remove the host ISO from the media server
+  ansible.builtin.shell: >-
+    find {{ media_www_root | quote }}/isos -maxdepth 1 -name 'vme-stack-{{ inventory_hostname }}-*.iso' -print -delete
+  delegate_to: "{{ deploy_host }}"
+  register: iso_rm
+  changed_when: iso_rm.stdout | length > 0
+  when: not keep_host_iso | bool
+
+# Without this record, the next lab `terraform apply` detaches the ISO and
+# deletes the hypervisor's copy.
+- name: Forget the ISO URL on the controller
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/build/{{ inventory_hostname }}/iso_url"
+    state: absent
+  delegate_to: localhost
+  when: not keep_host_iso | bool

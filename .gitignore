@@ -1,0 +1,53 @@
+# --- Secrets -----------------------------------------------------------------
+# Site data (site files, vaults, keys) never goes into this public repository:
+# keep it in a private repo or outside the clone. Only the example site is tracked.
+sites/*
+!sites/example/
+sites/*/group_vars/all/vault.yml
+
+# Ansible Vault passwords (vault files themselves are encrypted and may be committed)
+.vault_pass*
+vault-password*
+*.vault-pass
+
+# Environment files with credentials
+.env
+.env.*
+
+# Claude Code: personal permissions / local settings
+.claude/settings.local.json
+
+# --- OS / editors ------------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
+*testing*
+
+# --- Vendor media / docs (licensed, not redistributable) ----------------------
+*.iso
+*.pdf
+
+# --- SSH keys ----------------------------------------------------------------
+vme_stack
+vme_stack.pub
+*.pem
+id_*
+
+# --- ansible build output ----------------------------------------------------
+# Rendered seeds (admin user, keys, network) and ISO URLs
+ansible/build/
+__pycache__/
+*.pyc
+runs/
+
+
+# EE build output
+ee/context/
+ee/_stage/
+
+# Python dev env (task setup); Task state
+.venv/
+.task/
+
+# Log files
+*.log

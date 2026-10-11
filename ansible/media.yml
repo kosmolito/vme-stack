@@ -1,0 +1,31 @@
+---
+# Stages 1-2 only: build and publish the ISOs of hosts that need an install,
+# then stop. For platform manual (e.g. lab Terraform), run this first, boot the
+# hosts from build/<host>/iso_url, then run hvm_hosts.yml to wait + post-install.
+#   ansible-playbook media.yml -i ../sites/<site>/site.yml [--limit <host>]
+- name: Preflight
+  ansible.builtin.import_playbook: preflight.yml
+
+- name: Media server
+  ansible.builtin.import_playbook: media_server.yml
+
+- name: Build install media
+  hosts: hvm
+  gather_facts: false
+  tasks:
+    - name: Check host state
+      ansible.builtin.import_role:
+        name: host_state
+
+    - name: Build and publish the ISO
+      when: install_now | bool
+      block:
+        - name: Render the seed
+          ansible.builtin.import_role:
+            name: seed
+        - name: Build and publish the install ISO
+          ansible.builtin.import_role:
+            name: media
+        - name: Show the ISO URL
+          ansible.builtin.debug:
+            msg: "{{ inventory_hostname }}: {{ host_iso_url }}"

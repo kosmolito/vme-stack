@@ -1,0 +1,63 @@
+- block:
+    - name: 01_collect_information
+      ansible.builtin.include_tasks: 00_collect_information.yml
+      tags:
+        - always
+        - collect_information
+
+    - name: Show vendor information
+      ansible.builtin.debug:
+        msg: "vendor: {{ vendor }}"
+
+    - name: 02_eject_virtual_media
+      ansible.builtin.include_tasks: "{{ vendor }}/01_eject_virtual_media.yml"
+      when: (eject_virtual_media | bool == true) or (run_all_tasks | bool == true)
+      tags:
+        - eject_virtual_media
+        - eject_and_attach_virtual_media
+
+    - name: 03_insert_virtual_media
+      ansible.builtin.include_tasks: "{{ vendor }}/02_insert_virtual_media.yml"
+      when: (insert_virtual_media | bool == true) or (run_all_tasks | bool == true)
+      tags:
+        - insert_virtual_media
+        - eject_and_attach_virtual_media
+
+    - name: 04_bios_setup
+      ansible.builtin.include_tasks: "{{ vendor }}/03_bios_setup.yml"
+      when: (bios_setup | bool == true) or (run_all_tasks | bool == true)
+      tags:
+        - bios_setup
+
+    - name: 05_boot_once_order
+      ansible.builtin.include_tasks: "{{ vendor }}/04_boot_once_order.yml"
+      when: (boot_once_order | bool == true) or (run_all_tasks | bool == true)
+      tags:
+        - boot_once_order
+
+    - name: 06_start_or_reboot
+      ansible.builtin.include_tasks: "{{ vendor }}/05_start_or_reboot.yml"
+      when: (start_or_reboot | bool == true) or (run_all_tasks | bool == true)
+      tags:
+        - start_or_reboot
+  rescue:
+    # Re-raise so the play still reports failure after the always block below
+    # has had a chance to close the redfish session.
+    - name: Re-raise the original failure
+      ansible.builtin.fail:
+        msg: "{{ ansible_failed_result.msg | default('A task failed during baremetal lifecycle execution') }}"
+  always:
+    - name: Delete redfish session token
+      uri:
+        url: "https://{{ srv_ip }}/redfish/v1/SessionService/Sessions/{{ session_id }}"
+        validate_certs: "{{ srv_validate_certs }}"
+        method: DELETE
+        headers:
+          X-Auth-Token: "{{ session_token }}"
+        status_code:
+          - 200
+          - 201
+          - 204
+      when: session_id is defined
+      tags:
+        - always

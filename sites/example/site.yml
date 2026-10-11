@@ -1,0 +1,184 @@
+# Reference site: every setting of the site file, with what it does. Copy this
+# directory to start a site, then delete what you do not need (README.md).
+# Schema: ansible/schemas/site.schema.json. Values marked "default" can be left out.
+# Simpler starting points: ansible/examples/vm and ansible/examples/baremetal.
+#
+# This site: five HVM hosts on the mgmt network 10.30.0.0/24 (VLAN 100), two
+# clusters in the Manager, plus an existing vCenter shown next to them.
+#   hvm01-03  physical servers booted over Redfish (iLO, iDRAC), dedicated NICs
+#   hvm04     a VM booted by hand or Terraform (platform manual), shared NICs
+#   hvm05     a server with LACP and RAID: raw netplan + raw storage
+site: example                         # short name: run logs, Manager tenant default
+version: 1                            # schema version of this file
+
+media:                                # paths on the deploy server
+  hvm_iso: /srv/vme-stack/src/HPE_HVM_Install_24.04_S5Q83-11078.iso   # stock HVM install ISO
+  vme_iso: /srv/vme-stack/src/HPE_VM_Essentials_SW_image_v9.0.2_2_S6E64-11258.iso   # Manager image; needed with vme_manager
+  seed_mode: embedded                 # default; the seed goes into a per-host ISO (http: not implemented)
+
+network:                              # the mgmt network all hosts share
+  domain: example.com
+  gateway: 10.30.0.1
+  prefix: 24
+  mgmt_vlan: 100                      # default 0 = untagged; shared NIC layout: the switch port's native VLAN
+  dns: [10.30.0.10, 10.30.0.11]
+  ntp: [10.30.0.10, ntp1.example.com] # addresses or names (names must resolve on the dns servers)
+  timezone: Europe/Stockholm          # default UTC
+  # proxy: http://proxy.example.com:3128   # HTTP proxy for the installer and apt
+  bond_mode: active-backup            # default; or 802.3ad (LACP) for bond0/bond1 of nics hosts
+  compute_vlans: [200, 201]           # VM networks on the compute bridge (cluster creation)
+
+deploy_server:                        # builds and serves the ISOs; DNS/NTP/SSH probes run from here
+  name: deploy                        # default; inventory name
+  address: 10.30.0.5                  # hosts and BMCs fetch media from here; Ansible connects to it
+  user: vmestack                      # SSH user with passwordless sudo (connection ssh)
+  port: 8080                          # default; nginx
+  www_root: /srv/vme-stack/www        # default; ISOs in <www_root>/isos/
+  work_dir: /srv/vme-stack/work       # default; scratch space for ISO builds
+  # media_url: https://media.example.com   # if hosts/BMCs fetch media through another URL
+  connection: ssh                     # default; local = the playbook runs on the deploy server itself
+
+access:                               # how the controller (where the playbook/EE runs) reaches everything
+  ssh_private_key: vme_stack          # next to this file (relative to it); matches defaults.ssh_keys; never commit it
+  # jump: admin@bastion.example.com   # SSH jump host to the deploy server and the hosts, if needed
+
+defaults:                             # every host gets these unless it sets its own
+  platform: redfish                   # redfish (iLO/iDRAC virtual media) | manual (you boot the ISO URL)
+  admin_user: hvmadmin                # default; created by the install, key login + passwordless sudo
+  admin_password: vault_hvm_admin_password   # vault variable; the Manager logs in with it (needed by vme_clusters)
+  ssh_keys:                           # public keys for admin_user (the first matches access.ssh_private_key)
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx vme-stack"
+  boot_disk: auto                     # default: the smallest disk; or /dev/sda, or match keys (see hosts)
+  nic_layout: dedicated               # default; dedicated: bond0 = mgmt, bond1 = compute | shared: bond0 only
+
+hosts:
+  - name: hvm01                       # hostname (FQDN: <name>.<network.domain>)
+    ip: 10.30.0.21
+    bmc:                              # platform redfish: HPE iLO or Dell iDRAC
+      address: 10.30.1.21
+      credentials: vault_ilo          # vault variable with {username, password}
+      validate_certs: false           # default; true when the BMC has a trusted certificate
+      bios_setup: true                # default false; true: set UEFI boot + Secure Boot off first
+    nics:                             # MACs per role; each role becomes a bond (1-4 members)
+      mgmt: ["b4:7a:f1:00:00:01", "b4:7a:f1:00:00:02"]       # bond0, IP on bond0.<mgmt_vlan>
+      compute: ["b4:7a:f1:00:00:03", "b4:7a:f1:00:00:04"]    # bond1, VM traffic
+
+  - name: hvm02
+    ip: 10.30.0.22
+    bmc: { address: 10.30.1.22, credentials: vault_ilo }
+    boot_disk: { model: "*NS204i*" }  # installer match keys, all must match: serial, model, vendor (globs),
+    #                                   path (/dev/... glob), id_path (glob), ssd (bool), size: smallest|largest
+    nics:
+      mgmt: ["b4:7a:f1:00:01:01", "b4:7a:f1:00:01:02"]
+      compute: ["b4:7a:f1:00:01:03", "b4:7a:f1:00:01:04"]
+
+  - name: hvm03
+    ip: 10.30.0.23
+    bmc: { address: 10.30.1.23, credentials: vault_idrac }
+    boot_disk: /dev/sda               # a kernel name works too, but can change between boots
+    nics:
+      layout: dedicated               # per host; overrides defaults.nic_layout
+      mgmt: ["d0:94:66:00:00:01", "d0:94:66:00:00:02"]
+      compute: ["d0:94:66:00:00:03", "d0:94:66:00:00:04"]
+
+  - name: hvm04                       # a VM: you attach and boot the ISO URL the run prints
+    ip: 10.30.0.24
+    platform: manual                  # per host; overrides defaults.platform (no bmc then)
+    admin_user: hvmadmin              # admin_user, admin_password, ssh_keys, boot_disk: per host too
+    nics:
+      layout: shared                  # bond0 carries mgmt (untagged: native VLAN) and VM traffic
+      mgmt: ["00:50:56:00:30:24"]
+
+  - name: hvm05                       # edge case: LACP + RAID 1, written verbatim into the install
+    ip: 10.30.0.25
+    bmc: { address: 10.30.1.25, credentials: vault_ilo }
+    netplan:                          # raw netplan instead of nics (checked by netplan's parser in preflight)
+      version: 2
+      ethernets:
+        mgmt0: { match: { macaddress: "b4:7a:f1:00:05:01" }, set-name: mgmt0 }
+        mgmt1: { match: { macaddress: "b4:7a:f1:00:05:02" }, set-name: mgmt1 }
+        cmpt0: { match: { macaddress: "b4:7a:f1:00:05:03" }, set-name: cmpt0, mtu: 9000 }
+        cmpt1: { match: { macaddress: "b4:7a:f1:00:05:04" }, set-name: cmpt1, mtu: 9000 }
+      bonds:
+        bond0: { interfaces: [mgmt0, mgmt1], parameters: { mode: 802.3ad, lacp-rate: fast, mii-monitor-interval: 100 } }
+        bond1: { interfaces: [cmpt0, cmpt1], mtu: 9000, parameters: { mode: 802.3ad, mii-monitor-interval: 100 } }
+      vlans:
+        bond0.100:
+          id: 100
+          link: bond0
+          addresses: ["10.30.0.25/24"]          # must be the host's ip, static
+          routes: [{ to: default, via: 10.30.0.1 }]
+          nameservers: { addresses: ["10.30.0.10", "10.30.0.11"], search: ["example.com"] }
+    hpe_vm:                           # required with netplan: what HPE's cluster join uses
+      mgmt_interface: bond0.100       # carries ip; same names as the other hosts of its cluster
+      compute_interface: bond1        # VM traffic; not the parent of the mgmt VLAN
+    storage:                          # raw autoinstall storage instead of boot_disk: RAID 1 over two disks
+      # (autoinstall/curtin syntax; this layout is an illustration, not tested in the lab)
+      config:
+        - { type: disk, id: d0, match: { model: "*SSD-A*" }, ptable: gpt, wipe: superblock, grub_device: false }
+        - { type: disk, id: d1, match: { model: "*SSD-B*" }, ptable: gpt, wipe: superblock, grub_device: false }
+        - { type: partition, id: d0-esp, device: d0, size: 1G, flag: boot, grub_device: true }
+        - { type: partition, id: d1-esp, device: d1, size: 1G, flag: boot, grub_device: true }
+        - { type: partition, id: d0-md, device: d0, size: -1 }
+        - { type: partition, id: d1-md, device: d1, size: -1 }
+        - { type: format, id: esp-fs, volume: d0-esp, fstype: fat32 }
+        - { type: format, id: esp1-fs, volume: d1-esp, fstype: fat32 }   # second ESP, kept in sync by the installer
+        - { type: raid, id: md0, name: md0, raidlevel: raid1, devices: [d0-md, d1-md] }
+        - { type: format, id: root-fs, volume: md0, fstype: ext4 }
+        - { type: mount, id: esp-mnt, device: esp-fs, path: /boot/efi }
+        - { type: mount, id: root-mnt, device: root-fs, path: / }
+
+vme_manager:                          # the Manager VM, installed with HPE's hpe-vm onto one host
+  host: hvm01                         # the HVM host that runs it
+  ip: 10.30.0.30                      # netmask, gateway, DNS from network
+  hostname: vme-manager
+  url: https://vme-manager.example.com   # default https://<ip>; a name must resolve to ip on every dns server
+  size: M                             # default S; S = 12 GB / 2 vCPU, M = 16 GB / 4 vCPU, L = 32 GB / 4 vCPU
+  admin_user: vmeadmin                # default; VM admin and the Manager's first admin
+  admin_password: vault_vme_admin     # vault variable
+  tenant: Example                     # default: site; master tenant name
+  email: vmeadmin@example.com         # default <admin_user>@<network.domain>
+  # license_key: vault_vme_license    # vault variable; omit for the trial
+  datastore: nfs-prod                 # move the Manager's disk to this datastore of hvm01's cluster
+  autostart: false                    # default (hpe-vm's); true: libvirt starts the VM with its host
+  ssh_private_key: vault_vme_manager_ssh_private_key   # the Manager's key pair to every cluster's hosts
+  ssh_public_key: vault_vme_manager_ssh_public_key
+
+# Manager objects, joined by name; each is found by name or created, never changed or deleted.
+vme_groups:
+  - name: production
+  - name: development
+
+vme_clouds:
+  - name: example-hvm                 # HPE VM private cloud; holds the HVM clusters
+    type: hvm
+    groups: [production, development] # a cloud can be in several groups
+  - name: example-vcenter             # an existing vCenter, synced by the Manager
+    type: vmware
+    groups: [production]
+    vcenter:
+      url: https://vcenter.example.com   # /sdk is added when missing
+      credentials: vault_vcenter      # vault variable with {username, password}; a read-only role is enough
+      datacenter: DC1
+      cluster: Cluster01              # only this vCenter cluster; default the whole datacenter
+      import_existing: true           # default; the vCenter's VMs appear in the Manager (unmanaged)
+
+vme_clusters:
+  - name: prod
+    cloud: example-hvm                # a cloud of type hvm
+    group: production                 # one of the cloud's groups; default its first
+    hosts: [hvm01, hvm02, hvm03, hvm05]   # same mgmt/compute interface names and admin user on all
+    layout: mvm-1.3-ubuntu-24.04-std-morpheus-amd64   # default: the newest standard HVM layout offered
+    datastores:
+      - name: nfs-prod
+        type: nfs
+        host: nfs.example.com         # NFS server address or name
+        path: /export/vme-prod
+        version: "4"                  # "3" or "4"; default the Manager's
+        default: true                 # default false; the store for VM disks and images
+  - name: dev
+    cloud: example-hvm
+    group: development
+    hosts: [hvm04]                    # shared layout: own cluster (other interface names)
+    datastores:
+      - { name: nfs-dev, type: nfs, host: 10.30.0.40, path: /export/vme-dev }

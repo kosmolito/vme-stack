@@ -1,0 +1,55 @@
+---
+# Wait for the installed system. Probes run from probe_from (the deploy server,
+# on the mgmt network): a bare TCP connect is not enough in every network, so
+# look for a real SSH banner.
+
+# Reinstall of a running host: the boot driver may not control the machine
+# (platform manual), so first wait until the old system goes away.
+- name: "Wait for the old system to go down: {{ ansible_host }}"
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: 22
+    state: stopped
+    sleep: 10
+    timeout: "{{ wait_ssh_timeout }}"
+  delegate_to: "{{ probe_from }}"
+  # Not for a running install of this ISO: it reboots into the installed system
+  # on its own, and the deploy-key login below waits for that.
+  when: install_now | bool and host_was_up | bool and not install_running | default(false) | bool
+
+- name: Wait for SSH banner on {{ ansible_host }}
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: 22
+    search_regex: "SSH-2.0"
+    delay: "{{ 120 if install_now | bool else 0 }}"
+    sleep: 15
+    timeout: "{{ wait_ssh_timeout }}"
+  delegate_to: "{{ probe_from }}"
+
+# The live installer runs its own sshd once the network is up, so a banner
+# alone does not mean the installed system is ready. Keep trying our key.
+- name: Log in with the deploy key
+  ansible.builtin.wait_for_connection:
+    timeout: "{{ wait_ssh_timeout }}"
+    sleep: 15
+
+# Written by the seed's late-commands from the installer's cloud-init instance-id.
+- name: Read the install id
+  ansible.builtin.slurp:
+    src: /etc/vme-stack/install-id
+  register: instance_id
+  when: install_now | bool
+
+# install id = <host>-<seed hash>: proves the host booted the ISO built in this run.
+- name: Check the host was installed from this run's ISO
+  ansible.builtin.assert:
+    that: instance_id.content | b64decode | trim == inventory_hostname ~ '-' ~ seed_sha
+    fail_msg: >-
+      {{ inventory_hostname }} came up with install id '{{ instance_id.content | b64decode | trim }}',
+      expected '{{ inventory_hostname }}-{{ seed_sha }}'. It did not boot {{ host_iso_url }}.
+  when: install_now | bool
+
+- name: Gather facts
+  ansible.builtin.setup:
+    gather_subset: [min, network]

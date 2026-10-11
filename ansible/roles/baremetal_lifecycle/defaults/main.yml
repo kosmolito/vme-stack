@@ -1,0 +1,21 @@
+# Example: "http://webserver.example.com/path-to-iso.iso"
+hosted_iso_file: ""
+srv_username: "root"
+srv_password: "changeme"
+srv_ip: ""
+srv_validate_certs: false
+srv_mask_sensitive_output: true
+srv_BootMode: "Uefi"
+srv_SecureBootStatus: "Disabled"
+
+# Allowed values: On, ForceOff, ForceRestart, GracefulRestart, GracefulShutdown, PushPowerButton, Nmi, PowerCycle
+srv_ResetType: "ForceRestart"
+# Allowed values: None, Pxe, Floppy, Cd, Hdd, BiosSetup, Utilities, UefiTarget, SDCard, UefiHttp
+srv_BootSourceOverrideTarget: "Cd"
+
+eject_virtual_media: false
+insert_virtual_media: false
+bios_setup: false
+boot_once_order: false
+start_or_reboot: false
+run_all_tasks: false

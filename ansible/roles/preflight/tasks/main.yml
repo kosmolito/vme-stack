@@ -1,0 +1,224 @@
+---
+# Stage 1: preflight. Nothing here changes any machine.
+# 1. Site rules over the whole site file (even with --limit), all listed at once.
+# 2. Environment checks for the targeted hosts, all collected, then one verdict per host.
+
+# deploy.yml imports several stage playbooks that each import preflight: run it once.
+- name: Skip preflight if it already passed in this run
+  ansible.builtin.meta: end_play
+  when: vme_preflight_passed | default(false) | bool
+
+- name: "Check the site rules: {{ vme_site_file }}"
+  run_once: true
+  ansible.builtin.assert:
+    that: site_problems | length == 0
+    fail_msg: "{{ ['site file has ' ~ site_problems | length ~ ' problem(s):'] + site_problems }}"
+    quiet: true
+  vars:
+    site_problems: "{{ vme_site | vme_site_errors(role_path ~ '/..') }}"
+
+# --- Controller -------------------------------------------------------------
+
+- name: Check the SSH private key on the controller
+  run_once: true
+  delegate_to: localhost
+  ansible.builtin.stat:
+    path: "{{ ansible_ssh_private_key_file }}"
+  register: ssh_key
+
+- name: Collect controller problems
+  run_once: true
+  ansible.builtin.set_fact:
+    controller_problems: >-
+      {{ ([] if ssh_key.stat.exists else ['SSH private key not found: ' ~ ansible_ssh_private_key_file]) +
+         (['SSH private key ' ~ ansible_ssh_private_key_file ~ ' is readable by others (mode ' ~ ssh_key.stat.mode ~ '); ssh will refuse it. chmod 600 it.']
+           if ssh_key.stat.exists and ssh_key.stat.mode | int(base=8) % 64 != 0 else []) }}
+
+# --- Deploy server (builds and serves the ISOs) -----------------------------
+
+- name: Check the deploy server {{ deploy_host }}
+  run_once: true
+  delegate_to: "{{ deploy_host }}"
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -n true 2>/dev/null || echo "user $(id -un) has no passwordless sudo (needed for nginx/xorriso, the ISO mount, SELinux/firewall)"
+    command -v apt-get >/dev/null || command -v dnf >/dev/null || echo "neither apt-get nor dnf found (Debian/Ubuntu or RHEL family needed)"
+    command -v python3 >/dev/null || echo "python3 missing (DNS/NTP probes)"
+    if [ -r {{ hvm_src_iso | quote }} ]; then
+      # Every targeted host may need a new ISO, plus a 2 GB margin.
+      need_kb=$(( $(du -k {{ hvm_src_iso | quote }} | cut -f1) * {{ ansible_play_hosts | length }} + 2097152 ))
+      dir={{ media_www_root | quote }}; while [ ! -d "$dir" ]; do dir=$(dirname "$dir"); done
+      free_kb=$(df -Pk "$dir" | awk 'NR==2 {print $4}')
+      [ "${free_kb:-0}" -ge "$need_kb" ] || echo "only $(( ${free_kb:-0} / 1024 )) MB free for {{ media_www_root }}, need $(( need_kb / 1024 )) MB"
+    else
+      echo "stock HVM ISO not found: {{ hvm_src_iso }}"
+    fi
+    {% if vme_manager is defined and vme_manager.vme_iso %}
+    [ -r {{ vme_manager.vme_iso | quote }} ] || echo "VME software ISO not found: {{ vme_manager.vme_iso }}"
+    {% endif %}
+    true
+  args:
+    executable: /bin/bash
+  register: deploy_check
+  changed_when: false
+
+- name: Hand raw netplan of the targeted hosts to the deploy server
+  run_once: true
+  delegate_to: "{{ deploy_host }}"
+  ansible.builtin.copy:
+    content: "{{ raw_netplan | to_json }}"
+    dest: "/tmp/vme-stack-netplan-{{ vme_site.site }}.json"
+    mode: "0600"
+  vars:
+    raw_netplan: >-
+      {%- set out = {} -%}
+      {%- for h in ansible_play_hosts if hostvars[h].netplan is defined -%}
+      {%-   set _ = out.update({h: hostvars[h].netplan}) -%}
+      {%- endfor -%}
+      {{ out }}
+  when: raw_netplan | length > 0
+  register: netplan_file
+  changed_when: false
+
+- name: Validate raw netplan with netplan's parser
+  run_once: true
+  delegate_to: "{{ deploy_host }}"
+  ansible.builtin.script:
+    cmd: "netplan_check.py /tmp/vme-stack-netplan-{{ vme_site.site }}.json"
+    executable: python3
+  register: netplan_check
+  changed_when: false
+  when: netplan_file is not skipped
+
+# --- BMCs (platform redfish) ------------------------------------------------
+# Redfish calls go from the controller (boot_redfish delegates to localhost).
+
+- name: Check the BMC credentials are provided
+  ansible.builtin.set_fact:
+    bmc_problems: >-
+      {{ [] if (creds is mapping and creds.username is defined and creds.password is defined)
+         else ['BMC credentials: variable ' ~ bmc.credentials ~ ' with username and password is not defined '
+               ~ '(pass the vault file, e.g. -e @secrets.vault.yml --ask-vault-pass)'] }}
+  vars:
+    creds: "{{ lookup('ansible.builtin.vars', bmc.credentials, default='') }}"
+  when: platform == 'redfish'
+
+- name: Check the Redfish service on {{ bmc.address | default('-') }}
+  ansible.builtin.uri:
+    url: "https://{{ bmc.address }}/redfish/v1/"
+    validate_certs: "{{ bmc.validate_certs | default(false) }}"
+    timeout: 15
+  delegate_to: localhost
+  register: bmc_root
+  failed_when: false
+  when: platform == 'redfish'
+
+# --- DNS and NTP, probed from where the hosts live ---------------------------
+
+- name: Note when netplan's own syntax check is not available
+  run_once: true
+  ansible.builtin.set_fact:
+    netplan_unavailable: >-
+      {{ (netplan_check.stdout_lines | select('match', '[{]') | last | from_json).get('_unavailable')
+         if netplan_check is defined and netplan_check is not skipped else none }}
+
+# Names the hosts must resolve with the site's DNS servers (they use exactly
+# these): the Manager URL's name must give the Manager's IP on every server
+# (agents and users reach the Manager by that URL; a wrong record fails the
+# cluster step much later); NTP server names must give an address (warning,
+# like the other NTP checks).
+- name: Names to resolve with the site's DNS servers
+  run_once: true
+  ansible.builtin.set_fact:
+    manager_dns_name: >-
+      {{ vme_manager.url | urlsplit('hostname')
+         if vme_manager is defined and vme_manager.url | urlsplit('hostname') is not match('^[0-9.]+$') else '' }}
+    ntp_dns_names: "{{ ntp_servers | reject('match', '^[0-9.]+$') | list }}"
+
+- name: Probe DNS and NTP from {{ probe_from }}
+  run_once: true
+  delegate_to: "{{ probe_from }}"
+  ansible.builtin.script:
+    cmd: >-
+      net_probe.py --domain {{ domain | quote }}
+      --dns {{ dns | join(',') | quote }} --ntp {{ ntp_servers | join(',') | quote }}
+      {{ ('--resolve ' ~ resolve_names | join(',') | quote) if resolve_names | length > 0 else '' }}
+    executable: python3
+  vars:
+    resolve_names: "{{ ([manager_dns_name] if manager_dns_name | length > 0 else []) + ntp_dns_names }}"
+  register: net_probe_raw
+  changed_when: false
+
+- name: Evaluate DNS and NTP
+  run_once: true
+  ansible.builtin.set_fact:
+    net_problems: >-
+      {{ ([] if dns_ok | length > 0 else ['no DNS server answers from ' ~ probe_from ~ ': ' ~ dns | join(', ')])
+         + manager_dns_problems }}
+    net_warnings: >-
+      {{ (probe.dns | dict2items | rejectattr('value.ok') |
+           map(attribute='key') | map('regex_replace', '^(.*)$', 'DNS server \1 does not answer') | list) +
+         ntp_warnings + ntp_dns_warnings }}
+  vars:
+    probe: "{{ net_probe_raw.stdout | from_json }}"
+    dns_ok: "{{ probe.dns | dict2items | selectattr('value.ok') | list }}"
+    # Servers that do not answer at all are reported (warning) above.
+    manager_dns_problems: >-
+      {%- set out = [] -%}
+      {%- for server, r in probe.resolve[manager_dns_name] | default({}) | dictsort if r.ok and vme_manager.ip not in r.ips -%}
+      {{ out.append('DNS server ' ~ server ~ ' resolves the Manager URL name ' ~ manager_dns_name ~ ' to '
+                    ~ (r.ips | join(', ') if r.ips else 'nothing') ~ ', expected ' ~ vme_manager.ip) }}
+      {%- endfor -%}
+      {{ out }}
+    ntp_dns_warnings: >-
+      {%- set out = [] -%}
+      {%- for name in ntp_dns_names -%}
+      {%-   for server, r in probe.resolve[name] | default({}) | dictsort if r.ok and not r.ips -%}
+      {{ out.append('DNS server ' ~ server ~ ' has no address for NTP server ' ~ name) }}
+      {%-   endfor -%}
+      {%- endfor -%}
+      {{ out }}
+    # timesyncd refuses a server whose root distance is over 5 s or that reports itself unsynchronised.
+    ntp_warnings: >-
+      {%- set out = [] -%}
+      {%- for ip, r in probe.ntp.items() -%}
+      {%-   if not r.ok -%}{{ out.append('NTP server ' ~ ip ~ ' does not answer (' ~ r.error ~ ')') }}
+      {%-   elif r.leap == 3 or r.stratum in [0, 16] -%}
+      {{ out.append('NTP server ' ~ ip ~ ' is not synchronised itself (stratum ' ~ r.stratum
+                    ~ ', leap ' ~ r.leap ~ ')') }}
+      {%-   elif r.root_distance > 5 -%}{{ out.append('NTP server ' ~ ip ~ ' root distance ' ~ r.root_distance ~ ' s > 5 s; timesyncd will reject it') }}
+      {%-   endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+# NTP problems only warn (decided 2026-10-09; see spec Decisions log).
+- name: Show warnings
+  run_once: true
+  ansible.builtin.debug:
+    msg: >-
+      {{ ['WARNING:'] + net_warnings
+         + (['raw netplan syntax not checked: ' ~ netplan_unavailable ~ ' (the other netplan rules were checked)']
+            if netplan_unavailable | default(none) else []) }}
+  when: net_warnings | length > 0 or (netplan_unavailable | default("", true) | length > 0)
+
+- name: Preflight verdict for {{ inventory_hostname }}
+  ansible.builtin.assert:
+    that: problems | length == 0
+    fail_msg: "{{ ['preflight found ' ~ problems | length ~ ' problem(s):'] + problems }}"
+    success_msg: "preflight passed"
+  vars:
+    problems: >-
+      {{ controller_problems + net_problems +
+         (deploy_check.stdout_lines | map('regex_replace', '^', deploy_host ~ ': ') | list) +
+         ([('netplan: ' ~ netplan_result)] if netplan_result else []) +
+         (bmc_problems | default([])) +
+         (['BMC ' ~ bmc.address ~ ': Redfish service not reachable from the controller ('
+           ~ (bmc_root.msg | default(bmc_root.status | default('?'))) ~ ')']
+           if platform == 'redfish' and (bmc_root.status | default(0)) != 200 else []) }}
+    netplan_result: >-
+      {{ (netplan_check.stdout_lines | select('match', '[{]') | last | from_json).get(inventory_hostname)
+         if netplan_check is not skipped else none }}
+
+- name: Remember that preflight passed
+  ansible.builtin.set_fact:
+    vme_preflight_passed: true

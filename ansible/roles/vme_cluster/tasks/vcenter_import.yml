@@ -1,0 +1,97 @@
+---
+# Import the existing VMs of a vCenter cloud (loop var vc, from main.yml) once
+# the cloud is up: the Manager then keeps them as instances in its own records;
+# nothing is changed in vCenter. The one cloud setting vme-stack changes after
+# creation (switching it off later is left to the UI). Site: vcenter.import_existing
+# (default true; false skips this).
+- name: "Wait for the first sync of cloud {{ vc.name }}"
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/zones/{{ vme_cloud_ids[vc.name] }}"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: vc_zone
+  until: vc_zone.json.zone.status | default('') in ['ok', 'error', 'offline'] and vc_zone.json.zone.lastSync | default('', true) | length > 0
+  retries: 40
+  delay: 15
+
+- name: "Check the cloud is up: {{ vc.name }}"
+  ansible.builtin.assert:
+    that: vc_zone.json.zone.status == 'ok'
+    fail_msg: >-
+      Cloud {{ vc.name }} is '{{ vc_zone.json.zone.status }}':
+      {{ vc_zone.json.zone.statusMessage | default('see the cloud in the Manager UI') }}
+    quiet: true
+
+# The API returns the stored password masked; the update sends the vault's
+# again, with the rest of the stored config unchanged.
+- name: "Switch on importing existing VMs: {{ vc.name }}"
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/zones/{{ vme_cloud_ids[vc.name] }}"
+    method: PUT
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      zone:
+        config: >-
+          {{ vc_zone.json.zone.config | dict2items | rejectattr('key', 'equalto', 'passwordHash') | items2dict
+             | combine({'password': lookup('ansible.builtin.vars', vc.vcenter.credentials_var).password,
+                        'importExisting': 'on'}) }}
+    timeout: 120
+  delegate_to: "{{ probe_from }}"
+  register: vc_import
+  when: vc_zone.json.zone.config.importExisting | default('off') != 'on'
+  changed_when: true
+  failed_when: false
+  no_log: true
+
+- name: "Check the update of {{ vc.name }}"
+  ansible.builtin.assert:
+    that: vc_import is skipped or (vc_import.status | default(0) == 200 and vc_import.json.success | default(true))
+    fail_msg: >-
+      Switching on the import failed: HTTP {{ vc_import.status | default('?') }}
+      {{ vc_import.json.msg | default('') }} {{ vc_import.json.errors | default({}) }}
+    quiet: true
+
+- name: "Sync now: {{ vc.name }}"
+  when: vc_import is not skipped
+  block:
+    - name: "Refresh cloud {{ vc.name }}"
+      ansible.builtin.uri:
+        url: "{{ vme_api }}/zones/{{ vme_cloud_ids[vc.name] }}/refresh"
+        method: POST
+        validate_certs: false
+        headers: "{{ vme_headers }}"
+        body_format: json
+        body: {}
+      delegate_to: "{{ probe_from }}"
+      changed_when: false
+
+    - name: "Wait for the sync after the change: {{ vc.name }}"
+      ansible.builtin.uri:
+        url: "{{ vme_api }}/zones/{{ vme_cloud_ids[vc.name] }}"
+        validate_certs: false
+        headers: "{{ vme_headers }}"
+      delegate_to: "{{ probe_from }}"
+      register: vc_after
+      until: >-
+        vc_after.json.zone.lastSync | default('') > vc_zone.json.zone.lastSync
+        and vc_after.json.zone.status | default('') in ['ok', 'error', 'offline']
+      retries: 40
+      delay: 15
+
+- name: "Count the VMs of {{ vc.name }}"
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/servers?zoneId={{ vme_cloud_ids[vc.name] }}&max=10000"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: vc_vms
+
+- name: "Report {{ vc.name }}"
+  ansible.builtin.debug:
+    msg: >-
+      Cloud {{ vc.name }}: {{ (vc_after.json.zone | default(vc_zone.json.zone)).status }},
+      importing existing VMs: on, VMs in the Manager:
+      {{ vc_vms.json.servers | rejectattr('computeServerType.code', 'search', 'Hypervisor$') | list | length }}

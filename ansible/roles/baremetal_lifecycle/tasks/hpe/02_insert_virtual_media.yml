@@ -1,0 +1,31 @@
+- name: Make sure that the iso path is correct and the file exists [{{ hosted_iso_file }}]
+  uri:
+    url: "{{ hosted_iso_file }}"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: HEAD   # vme-stack: was GET, which downloaded the whole ISO
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Pause for 5 seconds
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Insert virtual media
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: POST
+    headers:
+      X-Auth-Token: "{{ session_token }}"
+    body:
+      Image: "{{ hosted_iso_file }}"
+      Inserted: true
+    body_format: json
+    status_code:
+      - 200
+      - 201
+      - 204
+  no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Pause for 5 seconds
+  ansible.builtin.pause:
+    seconds: 5

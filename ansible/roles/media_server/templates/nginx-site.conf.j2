@@ -1,0 +1,12 @@
+# Managed by vme-stack: install media for BMCs and hypervisors.
+server {
+    listen {{ media_port }};
+    listen [::]:{{ media_port }};
+    root {{ media_www_root }};
+    autoindex on;
+    sendfile on;
+    tcp_nopush on;
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
