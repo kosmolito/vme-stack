@@ -9,49 +9,47 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
-- **Site file change: the site file is a plain Ansible inventory.** No custom
-  inventory plugin and no JSON schema any more. `all.vars` holds the site-wide
-  settings (`site`, `media`, `network`, `ssh_jump`, `vme_manager`, `vme_groups`,
-  `vme_clouds`, `vme_clusters`); group `deploy_server` the deploy server, group
-  `hvm` the HVM hosts (their defaults as group vars, overrides as host vars), group
-  `vme_manager` the host that runs the Manager VM (was `vme_manager.host`).
-  Connections use Ansible's own variables: `ansible_host` (the host's static IP;
-  was `ip`, deploy server `address`), `ansible_user` (was `hvm_admin_user`,
-  deploy server `user`), `ansible_ssh_private_key_file` (was
-  `hvm_ssh_private_key`/`ssh_private_key`, now `"{{ inventory_dir }}/keys/..."`);
-  `ssh_jump` (was `deploy_server.jump`). `media` is a host var of the deploy server
-  (it describes that server), with `hvm_iso_path`/`vme_iso_path` (were `hvm_iso`/
-  `vme_iso`) and `www_root`/`work_dir`/`port`/`url` (were `deploy_server.*`).
-  Convert old site files after `sites/example/site.yml`;
-  an old file fails with "not a vme-stack site inventory".
+- **Site file change: the site file is a plain Ansible inventory** (YAML, any
+  name). No custom inventory plugin and no JSON schema any more. `all.vars` holds
+  the site-wide settings (`site`, `network`, `ssh_jump`, `vme_manager`,
+  `vme_groups`, `vme_clouds`, `vme_clusters`); group `deploy_server` the deploy
+  server, group `hvm` the HVM hosts (their defaults as group vars, overrides as
+  host vars), group `vme_manager` the host that runs the Manager VM (was
+  `vme_manager.host`). Connections use Ansible's own variables: `ansible_host`
+  (the host's static IP; was `ip`, deploy server `address`), `ansible_user` (was
+  `hvm_admin_user`, deploy server `user`), `ansible_ssh_private_key_file` (was
+  `hvm_ssh_private_key`/`ssh_private_key`); `ssh_jump` (was `deploy_server.jump`).
+  `media` is a host var of the deploy server (it describes that server), with
+  `hvm_iso_path`/`vme_iso_path` (were `hvm_iso`/`vme_iso`) and
+  `www_root`/`work_dir`/`port`/`url` (were `deploy_server.*`). Convert old site
+  files after `sites/example/site.yml`; an old file fails with "not a vme-stack
+  site inventory".
 - **Validation per variable**: preflight (and `validate.yml`, which contacts no
   machine) checks that secrets resolve, every variable against
   `roles/preflight/meta/argument_specs.yml` (types, required, allowed values,
   unknown keys of known dicts), then the site rules (formats, unique IPs/MACs,
   references, one deploy server and one Manager host); every problem of a step at
   once, over the whole site even with `--limit`.
+- **Run with ansible-navigator** from the site directory:
+  `cd sites/acme && ansible-navigator run deploy.yml`.
+  `sites/example/ansible-navigator.yml` sets the image, mounts the site directory
+  (`/site`), `logs/` and `build/` (seeds and ISO URLs now survive the container),
+  the inventory and the vault password file. Navigator records every run in
+  `logs/` (`ansible-navigator replay`). Plain `docker run` stays documented;
+  `--network host` is not needed.
+- **Keys in the site directory**: `keys/...`, referenced from the inventory as
+  `"{{ inventory_dir }}/keys/..."`, so they work the same with and without the
+  container. A key that is not found comes with that hint.
 - Per-host ISOs are named `hvm-<host>.iso` (was `vme-stack-<host>-<seed hash>.iso`);
   the seed hash sits in `hvm-<host>.iso.seed` next to it, so an unchanged seed is
-  still not rebuilt. A host that boots an older copy is caught by the install-id check.
+  still not rebuilt. A host that boots an older copy is caught by the install-id
+  check.
 - `media.yml` prints every host's ISO URL, also when nothing was built, and
   whether the ISO is on the deploy server (an installed host's ISO is removed
   after its install; `-e force_reinstall=true --limit <host>` builds it again, or
   `keep_host_iso: true` keeps it). Was: nothing for installed hosts.
 - Fix: `media_server` read the deploy server's state wrongly where `systemctl`
   prints nothing (e.g. without systemd).
-
-- **Run with ansible-navigator** from the site directory:
-  `cd sites/acme && ansible-navigator run deploy.yml`. `sites/example/ansible-navigator.yml`
-  sets the image, mounts the site directory (`/site`), `logs/` and `build/` (seeds
-  and ISO URLs now survive the container), the inventory and the vault password
-  file. Navigator records every run in `logs/` (`ansible-navigator replay`).
-  Plain `docker run` stays documented; `--network host` is not needed.
-- **Site file name is free**: any `.yml`/`.yaml` file with top-level `site:` and
-  `version:` is a site file (was: `site.yml` or `*.site.yml`); another YAML file
-  gets a clear "not a vme-stack site file" message.
-- **Keys in the site directory**: `keys/...`, written relative to the site file,
-  so they work the same with and without the container. A key that is not found
-  now comes with that hint.
 
 ## [0.1.3] - 2026-10-11
 
