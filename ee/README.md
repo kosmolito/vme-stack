@@ -70,6 +70,9 @@ tag arrives:
 - The image's `org.opencontainers.image.source` label links the package to this
   repository. The package is public: pulling needs no login.
 - A manual run (`workflow_dispatch`) builds and smoke-tests without pushing.
+- After the push, the GitHub release `v0.2.0` is created with the version's
+  `CHANGELOG.md` section as its notes, plus the image and what it was tested with
+  (`scripts/release.py notes 0.2.0` shows them; a re-run updates the release).
 
 ## Run
 

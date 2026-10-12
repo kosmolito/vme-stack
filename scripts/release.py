@@ -4,6 +4,9 @@
     release.py preflight X.Y.Z [--offline]   checks before a release, changes nothing
     release.py prepare X.Y.Z                 bump, changelog, docs; commit "Release X.Y.Z"
     release.py docs                          the docs match ee/VERSION (CI and after prepare)
+    release.py notes X.Y.Z [--image IMAGE] [--repo URL]
+                                             GitHub release notes: the version's CHANGELOG
+                                             section, the image and what it was tested with
 
 Docs rules: CHANGELOG.md has a section for the version; the "tested with" table
 in ee/README.md has a row for it (after prepare: equal to VME_TESTED in
@@ -32,6 +35,8 @@ PINNED_DOCS = [
 # Sections ee/README.md must keep (what a user of the image needs).
 EE_README_SECTIONS = ["## Build", "## Versions", "## Release", "## Run", "## Hotfix"]
 
+IMAGE = "ghcr.io/kosmolito/vme-stack-ee"
+REPO = "https://github.com/kosmolito/vme-stack"
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 PIN = re.compile(r"vme-stack-ee:(\d+\.\d+\.\d+)")
 UNRELEASED = "## [Unreleased]"
@@ -69,12 +74,33 @@ def table_row(version):
     return f"| {version} | {vme_tested()} |"
 
 
+def tested_with(version):
+    """The tested-with column of the version's row in ee/README.md, or None."""
+    m = re.search(rf"^\| {re.escape(version)} \| (.+?) \|$", EE_README.read_text(), re.M)
+    return m.group(1) if m else None
+
+
+def notes(version, image=IMAGE, repo=REPO):
+    """Release notes for vX.Y.Z (the ee-release workflow publishes them), or exit."""
+    body = section(CHANGELOG.read_text(), f"## [{version}]")
+    if body is None or not body.strip():
+        sys.exit(f"CHANGELOG.md: no section '## [{version}]', or it is empty")
+    # Links relative to the repository would break on the release page: to the tag's files.
+    body = re.sub(r"\]\((?![a-z]+:|#)([^)]+)\)", rf"]({repo}/blob/v{version}/\1)", body)
+    out = body.strip() + f"\n\n### Image\n\n```bash\ndocker pull {image}:{version}   # linux/amd64, linux/arm64\n```\n"
+    tested = tested_with(version)
+    if tested:
+        out += f"\nTested with: {tested}.\n"
+    return out
+
+
 def docs_problems(version, exact_row=False):
     errs = []
     if VERSION_FILE.read_text().strip() != version:
         errs.append(f"ee/VERSION is {VERSION_FILE.read_text().strip()}, not {version}")
-    if section(CHANGELOG.read_text(), f"## [{version}]") is None:
-        errs.append(f"CHANGELOG.md has no section '## [{version}]'")
+    body = section(CHANGELOG.read_text(), f"## [{version}]")
+    if body is None or not body.strip():
+        errs.append(f"CHANGELOG.md has no section '## [{version}]', or it is empty (the release notes)")
     readme = EE_README.read_text()
     if exact_row and table_row(version) not in readme:
         errs.append(f"ee/README.md: no row '{table_row(version)}' (from VME_TESTED in ee/build.sh)")
@@ -156,12 +182,19 @@ def main():
     p.add_argument("--offline", action="store_true")
     sub.add_parser("prepare").add_argument("version")
     sub.add_parser("docs")
+    p = sub.add_parser("notes")
+    p.add_argument("version")
+    p.add_argument("--image", default=IMAGE)
+    p.add_argument("--repo", default=REPO)
     a = ap.parse_args()
 
     if a.cmd == "preflight":
         errs = preflight(a.version, a.offline)
     elif a.cmd == "prepare":
         prepare(a.version)
+        return
+    elif a.cmd == "notes":
+        print(notes(a.version, a.image, a.repo), end="")
         return
     else:
         errs = docs_problems(VERSION_FILE.read_text().strip())

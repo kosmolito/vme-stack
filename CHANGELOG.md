@@ -11,6 +11,10 @@ empty one).
 
 ## [Unreleased]
 
+### Added
+
+- A GitHub release for each version, with its changelog section as the notes.
+
 ### Fixed
 
 - SSH failed with Docker Desktop (`muxserver_listen: link mux listener ... Bad file

@@ -2,7 +2,8 @@
 # linux/amd64 and linux/arm64 (e.g. Apple Silicon clients).
 # Trigger: push a tag vX.Y.Z that matches ee/VERSION: task release VERSION=X.Y.Z,
 # then task release:push (Taskfile.yml, ee/README.md).
-# Result: ghcr.io/<owner>/vme-stack-ee:X.Y.Z and :latest (multi-arch)
+# Result: ghcr.io/<owner>/vme-stack-ee:X.Y.Z and :latest (multi-arch), then the
+# GitHub release vX.Y.Z with the version's CHANGELOG section as its notes.
 name: ee-release
 
 on:
@@ -82,3 +83,34 @@ jobs:
           docker buildx imagetools inspect "$img:$v" | grep -q "linux/arm64"
           docker run --rm --platform linux/arm64 "$img:$v" bash -c 'uname -m; ansible --version | head -1; /usr/bin/python3.12 -c "import passlib"'
           echo "Pushed $img:$v and $img:latest (linux/amd64, linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
+
+  # The GitHub release, once the image is pushed and checked (a failed build gets
+  # none). A re-run updates the existing release.
+  release:
+    needs: ee
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write         # create the release; the build job stays read-only
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Write the release notes (CHANGELOG section, image, tested with)
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/vme-stack-ee
+          REPO: ${{ github.server_url }}/${{ github.repository }}
+        run: python3 scripts/release.py notes "${GITHUB_REF_NAME#v}" --image "${IMAGE,,}" --repo "$REPO" > notes.md
+
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          title="vme-stack ${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "$title" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$title" --notes-file notes.md
+          fi
+          echo "Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/$GITHUB_REF_NAME" >> "$GITHUB_STEP_SUMMARY"
