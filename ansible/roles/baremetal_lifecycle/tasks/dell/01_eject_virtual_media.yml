@@ -4,9 +4,7 @@
         url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1/VirtualMedia/1/Actions/VirtualMedia.EjectMedia"
         validate_certs: "{{ srv_validate_certs }}"
         method: POST
-        headers:
-          X-Auth-Token: "{{ session_token }}"
-          Content-Type: "application/json"
+        headers: "{{ srv_headers }}"
         body: '{}'
         body_format: json
         status_code:
@@ -23,9 +21,7 @@
         url: "https://{{ srv_ip }}/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD/Actions/VirtualMedia.EjectMedia"
         validate_certs: "{{ srv_validate_certs }}"
         method: POST
-        headers:
-          X-Auth-Token: "{{ session_token }}"
-          Content-Type: "application/json"
+        headers: "{{ srv_headers }}"
         body: '{}'
         body_format: json
         status_code:

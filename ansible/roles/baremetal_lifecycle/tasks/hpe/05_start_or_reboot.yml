@@ -3,9 +3,7 @@
     url: "https://{{ srv_ip }}/redfish/v1/Systems/1/Actions/ComputerSystem.Reset"
     validate_certs: "{{ srv_validate_certs }}"
     method: POST
-    headers:
-      X-Auth-Token: "{{ session_token }}"
-      Content-Type: "application/json"
+    headers: "{{ srv_headers }}"
     body_format: json
     body:
       ResetType: "On"
@@ -21,9 +19,7 @@
     url: "https://{{ srv_ip }}/redfish/v1/Systems/1/Actions/ComputerSystem.Reset"
     validate_certs: "{{ srv_validate_certs }}"
     method: POST
-    headers:
-      Content-Type: "application/json"
-      X-Auth-Token: "{{ session_token }}"
+    headers: "{{ srv_headers }}"
     body_format: json
     body:
       ResetType: "{{ srv_ResetType }}"

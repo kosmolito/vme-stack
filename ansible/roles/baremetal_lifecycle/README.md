@@ -11,5 +11,12 @@ two copies by hand.
 Local changes against the origin:
 - `tasks/{hpe,dell}/02_insert_virtual_media.yml`: the ISO URL check uses `HEAD`
   instead of `GET` (GET downloaded the whole ~4.6 GB ISO through the controller).
+- Basic auth fallback and `Accept` header (2026-10-12, Dell iDRAC with Redfish 1.4.0):
+  `tasks/00_collect_information.yml` accepts a 401 on the session login, then checks
+  the same credentials with basic auth (`GET /redfish/v1/Systems`) and fails only
+  if that is refused too. Every Redfish request sends the headers in `srv_headers`:
+  the session token or basic auth, `Accept: application/json` (that iDRAC answers
+  406 without it) and `Content-Type: application/json`; the session logout sends
+  `Accept` too. Diff for the origin: given to the maintainer to apply there.
 
 Uses `ansible.builtin.pause`, so it must run in a play with the linear strategy.

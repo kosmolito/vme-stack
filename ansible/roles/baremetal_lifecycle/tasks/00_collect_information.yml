@@ -5,6 +5,7 @@
     method: POST
     headers:
       Content-Type: "application/json"
+      Accept: "application/json"
     body_format: json
     body:
       UserName: "{{ srv_username | string }}"
@@ -12,15 +13,49 @@
     return_content: yes
     status_code:
       - 201
+      - 401   # some older iDRAC firmware refuses session logins that basic auth accepts
   register: redfish_session
   no_log: "{{ srv_mask_sensitive_output }}"
+
+# Session refused: the same credentials with basic auth (sent with every request).
+- name: Check basic auth when the session login is refused
+  ansible.builtin.uri:
+    url: "https://{{ srv_ip }}/redfish/v1/Systems"
+    validate_certs: "{{ srv_validate_certs }}"
+    method: GET
+    url_username: "{{ srv_username | string }}"
+    url_password: "{{ srv_password | string }}"
+    force_basic_auth: true
+    headers:
+      Accept: "application/json"
+    status_code:
+      - 200
+  register: redfish_basic
+  failed_when: false
+  no_log: "{{ srv_mask_sensitive_output }}"
+  when: redfish_session.status == 401
+
+- name: Fail when the BMC refuses the credentials
+  ansible.builtin.fail:
+    msg: "Redfish login refused by {{ srv_ip }} (session: 401, basic auth: {{ redfish_basic.status | default('-') }}): check the BMC user and password"
+  when: redfish_session.status == 401 and redfish_basic.status | default(0) != 200
 
 - name: Set session_token and session_id fact
   ansible.builtin.set_fact:
     session_token: "{{ redfish_session.x_auth_token }}"
     session_id: "{{ redfish_session.json.Id }}"
   no_log: "{{ srv_mask_sensitive_output }}"
+  when: redfish_session.status == 201
 
+# The headers of every Redfish request below: the session token, or basic auth;
+# Accept, as Dell iDRAC answers 406 Not Acceptable without it.
+- name: Set the Redfish request headers
+  ansible.builtin.set_fact:
+    srv_headers: >-
+      {{ {'Content-Type': 'application/json', 'Accept': 'application/json'}
+         | combine({'X-Auth-Token': session_token} if redfish_session.status == 201
+                   else {'Authorization': 'Basic ' ~ ((srv_username | string) ~ ':' ~ (srv_password | string)) | b64encode}) }}
+  no_log: "{{ srv_mask_sensitive_output }}"
 
 - block:
     - name: Try collect information from the machine (HPE-style Systems path)
@@ -28,8 +63,7 @@
         url: "https://{{ srv_ip }}/redfish/v1/Systems/1/"
         validate_certs: "{{ srv_validate_certs }}"
         method: GET
-        headers:
-          X-Auth-Token: "{{ session_token }}"
+        headers: "{{ srv_headers }}"
         status_code:
           - 200
           - 201
@@ -42,8 +76,7 @@
         url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1"
         validate_certs: "{{ srv_validate_certs }}"
         method: GET
-        headers:
-          X-Auth-Token: "{{ session_token }}"
+        headers: "{{ srv_headers }}"
         status_code:
           - 200
           - 201

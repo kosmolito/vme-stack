@@ -3,9 +3,7 @@
     url: "https://{{ srv_ip }}/redfish/v1/Systems/1/"
     validate_certs: "{{ srv_validate_certs }}"
     method: PATCH
-    headers:
-      X-Auth-Token: "{{ session_token }}"
-      Content-Type: "application/json"
+    headers: "{{ srv_headers }}"
     body_format: json
     body:
       Boot:

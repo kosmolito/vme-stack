@@ -3,8 +3,7 @@
     url: "https://{{ srv_ip }}/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.EjectMedia"
     validate_certs: "{{ srv_validate_certs }}"
     method: POST
-    headers:
-      X-Auth-Token: "{{ session_token }}"
+    headers: "{{ srv_headers }}"
     status_code:
       - 200
       - 201
