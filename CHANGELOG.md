@@ -17,6 +17,8 @@ empty one).
 
 ### Fixed
 
+- Preflight failed on Dell iDRAC with "Redfish service not reachable ... 406 Not
+  Acceptable": the check now sends `Accept: application/json`.
 - SSH failed with Docker Desktop (`muxserver_listen: link mux listener ... Bad file
   descriptor`): SSH's control sockets are now in `/tmp/ansible-cp`.
 

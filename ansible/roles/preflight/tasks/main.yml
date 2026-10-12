@@ -147,6 +147,10 @@
   ansible.builtin.uri:
     url: "https://{{ bmc.address }}/redfish/v1/"
     validate_certs: "{{ bmc.validate_certs | default(false) }}"
+    # Without an Accept header Dell iDRAC answers 406 Not Acceptable (Ansible's
+    # uri sends none).
+    headers:
+      Accept: application/json
     timeout: 15
   delegate_to: localhost
   register: bmc_root
