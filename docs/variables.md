@@ -125,6 +125,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `bmc.password` | str | yes | *Secret.* Its password. |
 | `bmc.validate_certs` | bool |  | Check the BMC's TLS certificate. Default false. |
 | `bmc.bios_setup` | bool |  | Set UEFI boot and Secure Boot off through Redfish before booting the ISO. Default false. |
+| `bmc_auth` | str: `session`, `basic` |  | How Redfish logs in to the BMC. session (default): a session, with basic auth if the BMC refuses the session login (some older iDRAC firmware). basic: basic auth only, never a session attempt; for such BMCs, as each refused session login counts as a failed login and iDRAC IP blocking can then lock the controller out. Set for all hosts (all.vars), a group or a host. |
 
 ## Environment
 

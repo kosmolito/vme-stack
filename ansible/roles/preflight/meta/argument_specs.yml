@@ -203,3 +203,11 @@ argument_specs:
           password: {type: str, required: true, no_log: true, description: Its password.}
           validate_certs: {type: bool, description: "Check the BMC's TLS certificate. Default false."}
           bios_setup: {type: bool, description: "Set UEFI boot and Secure Boot off through Redfish before booting the ISO. Default false."}
+      bmc_auth:
+        type: str
+        choices: [session, basic]
+        description: >-
+          How Redfish logs in to the BMC. session (default): a session, with basic auth if the BMC refuses the
+          session login (some older iDRAC firmware). basic: basic auth only, never a session attempt; for such
+          BMCs, as each refused session login counts as a failed login and iDRAC IP blocking can then lock the
+          controller out. Set for all hosts (all.vars), a group or a host.

@@ -4,6 +4,8 @@ srv_username: "root"
 srv_password: "changeme"
 srv_ip: ""
 srv_validate_certs: false
+# session (basic auth if the BMC refuses the session login) | basic (never a session)
+srv_auth: "session"
 srv_mask_sensitive_output: true
 srv_BootMode: "Uefi"
 srv_SecureBootStatus: "Disabled"

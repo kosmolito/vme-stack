@@ -1,4 +1,8 @@
+# srv_auth: session (default; basic auth if the BMC refuses the session login) or
+# basic (no session attempt: each refused one counts as a failed login on the BMC,
+# and iDRAC IP blocking then locks the controller out).
 - name: Create redfish session token
+  when: srv_auth == "session"
   uri:
     url: "https://{{ srv_ip }}/redfish/v1/SessionService/Sessions"
     validate_certs: "{{ srv_validate_certs }}"
@@ -17,8 +21,9 @@
   register: redfish_session
   no_log: "{{ srv_mask_sensitive_output }}"
 
-# Session refused: the same credentials with basic auth (sent with every request).
-- name: Check basic auth when the session login is refused
+# Basic auth (srv_auth basic, or the session login refused): check the credentials
+# once; they are then sent with every request.
+- name: Check basic auth
   ansible.builtin.uri:
     url: "https://{{ srv_ip }}/redfish/v1/Systems"
     validate_certs: "{{ srv_validate_certs }}"
@@ -33,23 +38,23 @@
   register: redfish_basic
   failed_when: false
   no_log: "{{ srv_mask_sensitive_output }}"
-  when: redfish_session.status == 401
+  when: srv_auth == "basic" or redfish_session.status | default(0) == 401
 
 - name: Fail when the BMC refuses the credentials
   ansible.builtin.fail:
     # uri's msg names the HTTP status or the connection error, never the credentials.
     msg: >-
-      Redfish login refused by {{ srv_ip }} (session: 401, basic auth: {{ redfish_basic.status | default('-') }}:
+      Redfish login refused by {{ srv_ip }} (session: {{ redfish_session.status | default('not tried') }}, basic auth: {{ redfish_basic.status | default('-') }}:
       {{ redfish_basic.msg | default('-') }}): {{ 'check the BMC user and password' if redfish_basic.status | default(0) == 401
       else 'the BMC did not answer the basic auth request (e.g. IP blocking after failed logins: iDRAC Settings > Network > IP Blocking)' }}
-  when: redfish_session.status == 401 and redfish_basic.status | default(0) != 200
+  when: redfish_basic is not skipped and redfish_basic.status | default(0) != 200
 
 - name: Set session_token and session_id fact
   ansible.builtin.set_fact:
     session_token: "{{ redfish_session.x_auth_token }}"
     session_id: "{{ redfish_session.json.Id }}"
   no_log: "{{ srv_mask_sensitive_output }}"
-  when: redfish_session.status == 201
+  when: redfish_session.status | default(0) == 201
 
 # The headers of every Redfish request below: the session token, or basic auth;
 # Accept, as Dell iDRAC answers 406 Not Acceptable without it.
@@ -57,7 +62,7 @@
   ansible.builtin.set_fact:
     srv_headers: >-
       {{ {'Content-Type': 'application/json', 'Accept': 'application/json'}
-         | combine({'X-Auth-Token': session_token} if redfish_session.status == 201
+         | combine({'X-Auth-Token': session_token} if redfish_session.status | default(0) == 201
                    else {'Authorization': 'Basic ' ~ ((srv_username | string) ~ ':' ~ (srv_password | string)) | b64encode}) }}
   no_log: "{{ srv_mask_sensitive_output }}"
 

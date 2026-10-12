@@ -17,6 +17,8 @@ Local changes against the origin:
   if that is refused too. Every Redfish request sends the headers in `srv_headers`:
   the session token or basic auth, `Accept: application/json` (that iDRAC answers
   406 without it) and `Content-Type: application/json`; the session logout sends
-  `Accept` too. Diff for the origin: given to the maintainer to apply there.
+  `Accept` too. `srv_auth` (default `session`; vme-stack: `bmc_auth`): `basic` skips
+  the session login altogether. Diff for the origin: given to the maintainer to apply
+  there.
 
 Uses `ansible.builtin.pause`, so it must run in a play with the linear strategy.

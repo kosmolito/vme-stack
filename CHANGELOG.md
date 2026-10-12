@@ -14,6 +14,10 @@ empty one).
 ### Added
 
 - A GitHub release for each version, with its changelog section as the notes.
+- `bmc_auth: session | basic`: how Redfish logs in to a BMC; set it for all
+  hosts, a group or a host. `basic` never tries a session, for BMCs that refuse
+  session logins (older iDRAC firmware), where each refused login counts toward
+  iDRAC's IP blocking.
 
 ### Fixed
 

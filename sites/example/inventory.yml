@@ -126,6 +126,8 @@ all:
           - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleEx admin@example.com"
         boot_disk: auto               # default: the smallest disk; or /dev/sda, or match keys (see hvm02)
         nic_layout: dedicated         # default; dedicated: bond0 = mgmt, bond1 = compute | shared: bond0 only
+        bmc_auth: session             # default; basic: Redfish basic auth only (BMCs that refuse sessions,
+        #                               e.g. older iDRAC firmware); also in all.vars or per host
       hosts:
         hvm01:                        # the hostname (FQDN: <name>.<network.domain>)
           ansible_host: 10.30.0.21    # its static IP on the mgmt network
@@ -151,6 +153,7 @@ all:
         hvm03:
           ansible_host: 10.30.0.23
           bmc: {address: 10.30.1.23, username: root, password: "{{ vault_idrac.password }}"}   # a literal works too
+          bmc_auth: basic             # per host; overrides the group's
           boot_disk: /dev/sda         # a kernel name works too, but can change between boots
           nics:
             layout: dedicated         # per host; overrides nic_layout

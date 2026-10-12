@@ -16,6 +16,7 @@
     srv_username: "{{ bmc.username }}"
     srv_password: "{{ bmc.password }}"
     srv_validate_certs: "{{ bmc.validate_certs | default(false) }}"
+    srv_auth: "{{ bmc_auth | default('session') }}"   # session (basic if refused) | basic
     eject_virtual_media: true
     insert_virtual_media: true
     bios_setup: "{{ bmc.bios_setup | default(false) }}"   # opt-in per host (site inventory)

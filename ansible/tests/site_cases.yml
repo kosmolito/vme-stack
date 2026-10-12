@@ -86,6 +86,9 @@ cases:
   - name: platform without a driver
     patch: {all: {children: {hvm: {vars: {platform: pxe}}}}}
     expect: "hvm01: value of platform must be one of: manual, redfish, got: pxe"
+  - name: unknown bmc_auth, set site-wide
+    patch: {all: {vars: {bmc_auth: digest}}}
+    expect: "hvm01: value of bmc_auth must be one of: session, basic, got: digest"
   - name: old bmc.credentials
     patch:
       all:
