@@ -86,15 +86,21 @@ ansible-navigator exec -- bash # shell in the container (code dir), e.g. ansible
 ```
 
 The playbooks are in the image; navigator only needs their names. The site
-directory is `/site` in the container (read-only), `logs/` is `/logs`, `build/`
-keeps rendered seeds and ISO URLs across runs (e.g. for Terraform that boots VMs
-from them). Create `logs/` and `build/` before the first run.
+directory is `/site` in the container (read-only), `logs/` is `/logs`. Create
+`logs/` before the first run.
+
+`build/` (mounted as the code's `build/`) is optional. Runs write the rendered
+seeds (`build/<host>/user-data`, `meta-data`) and each host's ISO URL there; a run
+uses its seeds itself, so without the mount nothing breaks, the files just go with
+the container. Keep the mount for tools that attach the install ISO themselves
+(they read `build/<host>/iso_url`) or to look at a seed when troubleshooting an
+install. The example settings mount it: create `build/` too, or drop that line.
 
 Without navigator, the same with plain Docker or Podman:
 
 ```bash
 cd sites/acme
-docker run --rm -it -v $PWD:/site:ro -v ~/.ssh:/home/runner/.ssh:ro -v $PWD/logs:/logs -v $PWD/build:/opt/vme-stack/code/build \
+docker run --rm -it -v $PWD:/site:ro -v ~/.ssh:/home/runner/.ssh:ro -v $PWD/logs:/logs \
   ghcr.io/kosmolito/vme-stack-ee:0.1.8 \
   ansible-playbook deploy.yml -i /site/inventory.yml --vault-password-file /site/.vault_pass
 ```
@@ -111,7 +117,7 @@ docker run --rm -it -v $PWD:/site:ro -v ~/.ssh:/home/runner/.ssh:ro -v $PWD/logs
 - The image is multi-arch (linux/amd64, linux/arm64): an Apple Silicon Mac gets the
   native arm64 variant.
 - Runs as uid 1000 (group 0): mounted files must be readable for it, `logs/` and
-  `build/` writable (on Linux with another uid: `chmod a+rwx logs build`, and keys
+  `build/` (if mounted) writable (on Linux with another uid: `chmod a+rwx logs build`, and keys
   and `.vault_pass` readable for uid 1000; Docker Desktop on a Mac maps this itself).
 - Without a command (plain Docker), the container starts a shell in the code directory.
 

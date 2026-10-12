@@ -31,7 +31,7 @@ ansible-navigator:
     volume-mounts:
       - {src: ".", dest: /site, options: ro}
       - {src: "./logs", dest: /logs}
-      - {src: "./build", dest: /opt/vme-stack/code/build}
+      - {src: "./build", dest: /opt/vme-stack/code/build}   # optional (seeds, ISO URLs): ee/README.md
     environment-variables:
       pass: [VME_STACK_DEBUG]
   mode: stdout
