@@ -1,198 +1,159 @@
 # Changelog
 
 Changes of vme-stack (the EE image `ghcr.io/kosmolito/vme-stack-ee`), newest first.
-Versions are vme-stack versions (`ee/VERSION`), not VME versions; the VME versions a
-release was tested with are in [`ee/README.md`](ee/README.md#versions).
+Versions are vme-stack versions (`ee/VERSION`), not VME versions; the VME versions
+each release was tested with are in [`ee/README.md`](ee/README.md#versions).
 
-Write changes under **Unreleased** as you go; `task release VERSION=X.Y.Z` turns
-that section into the release's section (and refuses to release with it empty).
+Write changes under **Unreleased** as you go, grouped as Added, Changed, Fixed,
+Removed; **Breaking** marks a change that needs a site file edit.
+`task release VERSION=X.Y.Z` turns the section into the release (and refuses an
+empty one).
 
 ## [Unreleased]
 
-- **EE without `jsonschema`**: nothing uses it since the site became a plain Ansible
-  inventory (0.1.4); removed from the image and the dev tools.
-- **SSH works with Docker Desktop**: the image keeps SSH's control sockets in
-  `/tmp/ansible-cp` (`ANSIBLE_SSH_CONTROL_PATH_DIR`). ansible-navigator's `/runner`
-  can be a host mount where ssh cannot create them, and then every connection
-  failed with `muxserver_listen: link mux listener ... Bad file descriptor`.
+### Fixed
+
+- SSH failed with Docker Desktop (`muxserver_listen: link mux listener ... Bad file
+  descriptor`): SSH's control sockets are now in `/tmp/ansible-cp`.
+
+### Removed
+
+- `jsonschema` from the image (unused since 0.1.4).
 
 ## [0.1.8] - 2026-10-12
 
-- **[`docs/variables.md`](docs/variables.md)**: every site variable in one place,
-  with what it is, its type, whether it is required and its default. Generated
-  from the spec preflight validates sites with (`task docs`; `task check` fails
-  when it is out of date), so it cannot drift. Preflight now also checks the
-  deploy server's connection variables (`ansible_host`, `ansible_user`,
-  `ansible_ssh_private_key_file`, `ansible_connection`).
+### Added
+
+- [`docs/variables.md`](docs/variables.md): every site variable with type,
+  default and whether it is required; generated, `task check` keeps it current.
+- Preflight checks the deploy server's connection variables.
 
 ## [0.1.7] - 2026-10-11
 
-- **The Manager's SSH key pair defaults to your login key**: without
-  `vme_manager.ssh_private_key`/`ssh_public_key`, the key pair the Manager uses
-  on the cluster hosts is read from `vme_manager.ssh_private_key_file` and
-  `<file>.pub`, by default the Manager host's login key (`~/.ssh/id_ed25519`
-  unless `ansible_ssh_private_key_file` says otherwise). No vault entries needed
-  for it; preflight checks the files. Setting the pair itself (e.g. from the
-  vault) still works; setting only one of the two is now an error.
-- The example site files are named `inventory.yml` (was `site.yml`, which editors
-  take for a playbook); in a split site the example names `group_vars/all/vars.yml`.
-  Any name works, as before.
-- Fix: preflight rejected an SSH key file that is a symlink (it read the link's
-  mode, 0777, instead of the key's).
+### Changed
+
+- The Manager's SSH key pair defaults to the Manager host's login key
+  (`ssh_private_key_file` and `<file>.pub`); no vault entries needed. Setting only
+  one of `ssh_private_key`/`ssh_public_key` is an error.
+- Example site files are named `inventory.yml` (was `site.yml`); any name works.
+
+### Fixed
+
+- Preflight rejected an SSH key that is a symlink.
 
 ## [0.1.6] - 2026-10-11
 
-- **SSH key `~/.ssh/id_ed25519` by default** (`ansible.cfg` `private_key_file`), for
-  the deploy server and the HVM hosts: `ansible_ssh_private_key_file` is optional
-  now. ansible-navigator mounts your `~/.ssh` into the container itself (at
-  `/home/runner/.ssh`); the image links it as `~/.ssh`, so `~/.ssh/...` means the
-  same as on your machine and keys stay in `~/.ssh`, not in site directories
-  (plain Docker: `-v ~/.ssh:/home/runner/.ssh:ro`). Keys in the site directory
-  (`"{{ inventory_dir }}/keys/..."`) keep working.
+### Added
 
-- A site can be split the usual Ansible way (an INI inventory plus `group_vars/`
-  and `host_vars/`); `sites/example/README.md` shows it. The site checks
-  (`tests/check_sites.py`) and the support bundle now take the whole site
-  directory (without vault, keys and run output), not only the inventory file.
-- Fix: the support bundle failed (no file at all) when the controller had rendered
-  seeds: their per-host directories in the bundle were not created (since 0.1.3).
+- A site can be split the Ansible way (INI inventory, `group_vars/`, `host_vars/`);
+  see `sites/example/README.md`.
 
-- The navigator settings (`sites/example/ansible-navigator.yml`, the repository's
-  `ansible-navigator.yaml`) set `container-engine: docker`: with `auto` (also the
-  default when it is missing) navigator takes podman whenever podman is installed,
-  even when Docker is the engine in use, and the run fails. Podman users set
-  `container-engine: podman`.
+### Changed
+
+- `~/.ssh/id_ed25519` is the default SSH key; `ansible_ssh_private_key_file` is
+  optional. ansible-navigator mounts your `~/.ssh` into the container.
+- The navigator settings set `container-engine: docker` (`auto` picks podman
+  whenever it is installed). Podman users: `container-engine: podman`.
+
+### Fixed
+
+- The support bundle was not written when rendered seeds existed (since 0.1.3).
 
 ## [0.1.5] - 2026-10-11
 
-- `ansible-navigator.yaml` in the repository root, for working on vme-stack: runs
-  the project image (`vme-stack-ee:latest`) with the clone's own `ansible/` as its
-  code (the image's hotfix mount), so changes run in the real EE without a rebuild.
-- `sites/example/ansible-navigator.yml` uses `vme-stack-ee:latest` (pulled again
-  when a newer one is published); pin a version there to stay on it.
+### Added
+
+- `ansible-navigator.yaml` in the repository root: runs the image with your
+  clone's `ansible/` as its code, for development without a rebuild.
+
+### Changed
+
+- `sites/example/ansible-navigator.yml` uses `vme-stack-ee:latest`; pin a version
+  there to stay on it.
 
 ## [0.1.4] - 2026-10-11
 
-- **Site file change: the site file is a plain Ansible inventory** (YAML, any
-  name). No custom inventory plugin and no JSON schema any more. `all.vars` holds
-  the site-wide settings (`site`, `network`, `ssh_jump`, `vme_manager`,
-  `vme_groups`, `vme_clouds`, `vme_clusters`); group `deploy_server` the deploy
-  server, group `hvm` the HVM hosts (their defaults as group vars, overrides as
-  host vars), group `vme_manager` the host that runs the Manager VM (was
-  `vme_manager.host`). Connections use Ansible's own variables: `ansible_host`
-  (the host's static IP; was `ip`, deploy server `address`), `ansible_user` (was
-  `hvm_admin_user`, deploy server `user`), `ansible_ssh_private_key_file` (was
-  `hvm_ssh_private_key`/`ssh_private_key`); `ssh_jump` (was `deploy_server.jump`).
-  `media` is a host var of the deploy server (it describes that server), with
-  `hvm_iso_path`/`vme_iso_path` (were `hvm_iso`/`vme_iso`) and
-  `www_root`/`work_dir`/`port`/`url` (were `deploy_server.*`). Convert old site
-  files after `sites/example/site.yml`; an old file fails with "not a vme-stack
-  site inventory".
-- **Validation per variable**: preflight (and `validate.yml`, which contacts no
-  machine) checks that secrets resolve, every variable against
-  `roles/preflight/meta/argument_specs.yml` (types, required, allowed values,
-  unknown keys of known dicts), then the site rules (formats, unique IPs/MACs,
-  references, one deploy server and one Manager host); every problem of a step at
-  once, over the whole site even with `--limit`.
-- **Run with ansible-navigator** from the site directory:
-  `cd sites/acme && ansible-navigator run deploy.yml`.
-  `sites/example/ansible-navigator.yml` sets the image, mounts the site directory
-  (`/site`), `logs/` and `build/` (seeds and ISO URLs now survive the container),
-  the inventory and the vault password file. Navigator records every run in
-  `logs/` (`ansible-navigator replay`). Plain `docker run` stays documented;
-  `--network host` is not needed.
-- **Keys in the site directory**: `keys/...`, referenced from the inventory as
-  `"{{ inventory_dir }}/keys/..."`, so they work the same with and without the
-  container. A key that is not found comes with that hint.
-- Per-host ISOs are named `hvm-<host>.iso` (was `vme-stack-<host>-<seed hash>.iso`);
-  the seed hash sits in `hvm-<host>.iso.seed` next to it, so an unchanged seed is
-  still not rebuilt. A host that boots an older copy is caught by the install-id
-  check.
-- `media.yml` prints every host's ISO URL, also when nothing was built, and
-  whether the ISO is on the deploy server (an installed host's ISO is removed
-  after its install; `-e force_reinstall=true --limit <host>` builds it again, or
-  `keep_host_iso: true` keeps it). Was: nothing for installed hosts.
-- Fix: `media_server` read the deploy server's state wrongly where `systemctl`
-  prints nothing (e.g. without systemd).
+### Changed
+
+- **Breaking:** the site file is a plain Ansible inventory: groups
+  `deploy_server`, `hvm`, `vme_manager`; Ansible's own `ansible_host`,
+  `ansible_user`, `ansible_ssh_private_key_file`; `media` is a host var of the
+  deploy server. Convert old files after `sites/example/`; an old file fails with
+  "not a vme-stack site inventory".
+- Validation per variable (`roles/preflight/meta/argument_specs.yml`) and site
+  rules, all problems at once; `validate.yml` checks a site without contacting
+  anything.
+- Per-host ISOs are named `hvm-<host>.iso`.
+- `media.yml` prints every host's ISO URL, also when nothing was built.
+
+### Added
+
+- Run with ansible-navigator from the site directory
+  (`sites/example/ansible-navigator.yml`); runs are recorded in `logs/`.
+- Keys in the site directory: `"{{ inventory_dir }}/keys/..."`.
+
+### Removed
+
+- The custom inventory plugin and the JSON schema.
+
+### Fixed
+
+- `media_server` misread the deploy server's state where `systemctl` prints
+  nothing.
 
 ## [0.1.3] - 2026-10-11
 
-- **Run logs**: every `ansible-playbook` run in the container writes its whole
-  output to `/logs/<date>-<time>-<playbook>.log` when a writable `/logs` is
-  mounted (`-v $PWD/logs:/logs`); without it the run says the log is lost.
-- **Support bundle**: `-e VME_STACK_DEBUG=1` makes a run verbose and afterwards,
-  also after a failure, collects logs and state of the controller, the deploy
-  server, every HVM host and the Manager (API) into
-  `/logs/vme-stack-support-<site>-<date>.tar.gz`, with every vault value, every
-  secret field of the site file and password hashes replaced by `********`.
-  `collect.yml` does the same on its own. Collecting changes nothing on the
-  machines. See `ee/README.md` (Logs and support bundle).
+### Added
+
+- Run logs: each run writes `/logs/<date>-<time>-<playbook>.log` when `/logs` is
+  mounted.
+- Support bundle: `VME_STACK_DEBUG=1` (or `collect.yml`) collects logs and state
+  of all machines into `/logs/vme-stack-support-<site>-<date>.tar.gz`, secrets
+  replaced. See `ee/README.md`.
 
 ## [0.1.2] - 2026-10-11
 
-- **Site file change: SSH keys per login.** `access` is gone. The deploy server's
-  login is `deploy_server.user` + `deploy_server.ssh_private_key`; the HVM hosts'
-  is `hvm_admin_user` + `defaults.hvm_ssh_private_key` (both may name the same
-  file). The jump host moves to `deploy_server.jump` and uses the deploy server's
-  key. `ssh_keys` is replaced: the public key of `hvm_ssh_private_key` is now
-  derived at preflight and installed for the admin user, so it always matches;
-  `hvm_ssh_keys` only adds extra keys (e.g. administrators'). Old keys fail the
-  schema check with the new form.
-- `deploy_server.connection: local` is for Ansible installed on the deploy server
-  itself; from the container always use `ssh` (the docs now say so).
+### Changed
+
+- **Breaking:** SSH keys per login; `access` is gone. Deploy server:
+  `deploy_server.user` + `ssh_private_key`; HVM hosts: `hvm_admin_user` +
+  `hvm_ssh_private_key`; jump host: `deploy_server.jump`. The hosts get the public
+  key of their login key; `hvm_ssh_keys` adds more.
+- From the container, the deploy server connection is always `ssh`.
 
 ## [0.1.1] - 2026-10-11
 
-- **Site file change: secrets are plain Ansible values.** A secret field holds the
-  value itself, the Ansible way: usually a quoted template referencing the vault,
-  e.g. `hvm_admin_password: "{{ vault_hvm_admin_password }}"` (recommended), or a
-  literal (works, not recommended). It used to hold the name of a vault variable,
-  which did not tell a reader what was a literal. Preflight lists every secret
-  that does not resolve (vault not loaded, variable or value missing).
-- **Renamed keys** (old ones fail the schema check with the new form; see
-  `sites/example/`):
-  - the hosts' `admin_user`/`admin_password` -> `hvm_admin_user`/`hvm_admin_password`
-    (in `defaults` and per host); the Manager's stay `vme_manager.admin_user`/
-    `admin_password`
-  - `bmc.credentials` -> `bmc.username` + `bmc.password`: each BMC its own login,
-    or several servers sharing one vault variable
-  - `vcenter.credentials` -> `vcenter.username` + `vcenter.password`
-  - `vme_manager.admin_password`, `license_key`, `ssh_private_key`,
-    `ssh_public_key` hold values (or vault references), no longer variable names
-- Preflight: all hosts of a cluster need the same `hvm_admin_password` (as already
-  the same `hvm_admin_user`). The Manager's cluster API takes one SSH login for
-  all hosts, so different passwords used to fail the cluster step late in the run.
+### Changed
+
+- **Breaking:** secret fields hold values (usually
+  `"{{ vault_<name> }}"`), not vault variable names; preflight lists secrets that
+  do not resolve.
+- **Breaking:** renamed keys: `admin_user`/`admin_password` →
+  `hvm_admin_user`/`hvm_admin_password`; `bmc.credentials` → `bmc.username` +
+  `bmc.password`; `vcenter.credentials` → `vcenter.username` + `vcenter.password`.
+- Preflight: all hosts of a cluster need the same `hvm_admin_password`.
 
 ## [0.1.0] - 2026-10-11
 
-First public release. From empty servers (or VMs) to a working HPE VM Essentials
-environment, driven by one site file; tested end to end with VME 9.0.2 (8.1.1 also
-supported) in a lab of Proxmox VMs, about 45 minutes from empty hosts to cluster.
+First public release: from empty servers or VMs to a working HPE VM Essentials
+environment from one site file. Tested end to end with VME 9.0.2 (8.1.1 also
+supported), about 45 minutes.
 
-- **Site file**: one `site.yml` per site, loaded as inventory and checked against a
-  JSON schema and cross-field rules before anything runs; secrets only as vault
-  variable names. Example sites: `ansible/examples/` (VMs, bare metal) and
-  `sites/example/` (every setting).
-- **Preflight** (`preflight.yml`, changes nothing): deploy server (sudo, packages,
-  ISOs, space), SSH key, DNS and NTP from the deploy server, the Manager URL's DNS
-  record on every site DNS server, BMCs' Redfish service, raw netplan through
-  netplan's own parser.
-- **HVM hosts**: unattended install from HPE's own HVM ISO; the seed is HPE's
-  `/server/user-data` from that ISO plus our answers (network, disk, identity,
-  proxy, timezone). One ISO per host, built and served by a deploy server (Ubuntu/
-  Debian or RHEL family). Boot over Redfish (HPE iLO, Dell iDRAC; untested on real
-  hardware) or by anyone else from the printed ISO URL (`platform: manual`).
-- Network per host as a NIC layout (dedicated mgmt/compute bonds or one shared bond,
-  matched by MAC, mgmt VLAN tagged or untagged) or raw netplan; disk as `auto`, a
-  kernel name, installer match keys or a raw storage section.
-- Re-runs are safe: installed hosts are skipped, foreign machines on a host's IP
-  stop the run, a host's own running installer is recognised; `force_reinstall`
-  with `--limit` reinstalls.
-- **VME Manager**: installed with HPE's `hpe-vm --install` from the VM Essentials
-  ISO (served from the mounted ISO), first-time setup through the API (trial or
-  license key), optionally moved onto shared storage and made managed.
-- **Manager objects**: groups, clouds (HVM private clouds; vCenter clouds with
-  import of existing VMs) and HVM clusters with NFS datastores, found by name or
-  created, never changed or deleted.
-- **Container image** `ghcr.io/kosmolito/vme-stack-ee` (linux/amd64, linux/arm64)
-  with everything the pipeline needs; hotfix mount for emergency code changes.
+### Added
+
+- Site file with checks before anything runs; example sites in
+  `ansible/examples/` and `sites/example/`.
+- Preflight (`preflight.yml`, changes nothing): deploy server, SSH, DNS, NTP,
+  BMCs, netplan.
+- HVM hosts: unattended install from HPE's HVM ISO, one ISO per host built and
+  served by the deploy server; boot over Redfish (iLO, iDRAC; untested on real
+  hardware) or by hand (`platform: manual`). NIC layouts or raw netplan; disk
+  selection.
+- Safe re-runs: installed hosts skipped, foreign machines on a host's IP stop the
+  run; `force_reinstall` with `--limit`.
+- VME Manager: installed with `hpe-vm --install`, first-time setup through the
+  API, optionally moved to shared storage.
+- Manager objects: groups, clouds (HVM, vCenter) and HVM clusters with NFS
+  datastores; created if missing, never changed or deleted.
+- Container image `ghcr.io/kosmolito/vme-stack-ee` (amd64, arm64) with a hotfix
+  mount.
