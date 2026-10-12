@@ -1,3 +1,2 @@
 # Python libraries the vme-stack code needs on the controller
-jsonschema          # site.yml schema check (inventory plugin)
 passlib             # password_hash for the hosts' admin password

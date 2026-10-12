@@ -114,7 +114,7 @@ tasks:
     desc: Smoke-test the local image vme-stack-ee:<ee/VERSION>
     cmds:
       - docker run --rm vme-stack-ee:{{.EE_VERSION}} ansible --version
-      - docker run --rm vme-stack-ee:{{.EE_VERSION}} /usr/bin/python3.12 -c "import jsonschema, passlib"
+      - docker run --rm vme-stack-ee:{{.EE_VERSION}} /usr/bin/python3.12 -c "import passlib"
       - docker run --rm vme-stack-ee:{{.EE_VERSION}} ansible-inventory -i examples/baremetal/inventory.yml --graph
       - docker run --rm vme-stack-ee:{{.EE_VERSION}} cat VERSION | grep -qx "{{.EE_VERSION}}"
 

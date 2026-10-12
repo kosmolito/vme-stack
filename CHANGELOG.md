@@ -9,6 +9,8 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **EE without `jsonschema`**: nothing uses it since the site became a plain Ansible
+  inventory (0.1.4); removed from the image and the dev tools.
 - **SSH works with Docker Desktop**: the image keeps SSH's control sockets in
   `/tmp/ansible-cp` (`ANSIBLE_SSH_CONTROL_PATH_DIR`). ansible-navigator's `/runner`
   can be a host mount where ssh cannot create them, and then every connection

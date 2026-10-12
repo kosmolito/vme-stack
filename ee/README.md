@@ -1,7 +1,7 @@
 # vme-stack execution environment (EE)
 
 One image with everything the pipeline needs: ansible-core, ansible-runner, the
-Python libraries (jsonschema, passlib), an SSH client **and the vme-stack code**
+Python library passlib, an SSH client **and the vme-stack code**
 (`ansible`, baked in at `/opt/vme-stack/code`). Site data is never in the
 image: the site directory (site file, vault, vault password, keys) is mounted.
 
