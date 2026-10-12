@@ -28,6 +28,15 @@ empty one).
   sends `Accept: application/json`.
 - SSH failed with Docker Desktop (`muxserver_listen: link mux listener ... Bad file
   descriptor`): SSH's control sockets are now in `/tmp/ansible-cp`.
+- Dell iDRAC9 booted the disk instead of the install ISO: the standard boot-once
+  target `Cd` means the physical CD/DVD there. The host now boots once from the
+  virtual CD through the iDRAC's own setting (`VCD-DVD`).
+- A host whose `nics` MACs were written in uppercase came up without network,
+  hostname or admin user (cloud-init saw the NICs as missing). MACs go into the
+  install seed in lowercase.
+- With a symlinked SSH key (e.g. `~/.ssh/id_ed25519`), the key Ansible logs in
+  with was left out of the hosts' admin user, so the run could not log in after
+  the install.
 
 ### Removed
 

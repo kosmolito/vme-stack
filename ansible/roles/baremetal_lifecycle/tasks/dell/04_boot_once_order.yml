@@ -1,40 +1,84 @@
-- name: Get the ComputerSystem resource
+# iDRAC9 maps the standard override target Cd to the physical CD/DVD: the
+# BIOS skips the virtual CD and boots the disk (seen with iDRAC9 firmware
+# 3.30). Its own boot-once attributes name the virtual CD (VCD-DVD) and
+# apply without a BIOS job. iDRACs without them use the standard override.
+- name: Read the iDRAC boot-once attributes
   ansible.builtin.uri:
-    url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1"
+    url: "https://{{ srv_ip }}/redfish/v1/Managers/iDRAC.Embedded.1/Attributes"
     validate_certs: "{{ srv_validate_certs }}"
     method: GET
     headers: "{{ srv_headers }}"
     status_code:
       - 200
-  register: boot_once_system_info
+      - 404
+  register: boot_once_idrac_attributes
+  when: srv_BootSourceOverrideTarget == "Cd"
   no_log: "{{ srv_mask_sensitive_output }}"
 
-# Newer iDRAC generations (e.g. iDRAC10) expose the ComputerSystem's Boot
-# properties as read-only and require PATCHing the staged resource advertised
-# via @Redfish.Settings instead. Older generations (e.g. iDRAC9) don't expose
-# @Redfish.Settings here and accept a direct PATCH.
-- name: Determine the writable boot-override URI
+- name: Note whether the iDRAC boots the virtual CD by its own attribute
   ansible.builtin.set_fact:
-    boot_once_override_uri: "{{ boot_once_system_info.json['@Redfish.Settings'].SettingsObject['@odata.id']
-      if (boot_once_system_info.json['@Redfish.Settings'] is defined)
-      else '/redfish/v1/Systems/System.Embedded.1' }}"
+    boot_once_idrac_vcd: >-
+      {{ srv_BootSourceOverrideTarget == "Cd"
+         and boot_once_idrac_attributes.status == 200
+         and 'ServerBoot.1.FirstBootDevice' in (boot_once_idrac_attributes.json.Attributes | default({})) }}
 
-- name: Set the host to boot once from the VirtualMedia device
+- name: Set the host to boot once from the virtual CD (iDRAC attribute)
   ansible.builtin.uri:
-    url: "https://{{ srv_ip }}{{ boot_once_override_uri }}"
+    url: "https://{{ srv_ip }}/redfish/v1/Managers/iDRAC.Embedded.1/Attributes"
     validate_certs: "{{ srv_validate_certs }}"
     method: PATCH
     headers: "{{ srv_headers }}"
     body_format: json
     body:
-      Boot:
-        BootSourceOverrideTarget: "{{ srv_BootSourceOverrideTarget }}"
-        BootSourceOverrideEnabled: "Once"
+      Attributes:
+        ServerBoot.1.BootOnce: "Enabled"
+        ServerBoot.1.FirstBootDevice: "VCD-DVD"
     status_code:
       - 200
-      - 201
       - 204
+  when: boot_once_idrac_vcd | bool
   no_log: "{{ srv_mask_sensitive_output }}"
+
+- name: Set the host to boot once by the standard Redfish override
+  when: not (boot_once_idrac_vcd | bool)
+  block:
+    - name: Get the ComputerSystem resource
+      ansible.builtin.uri:
+        url: "https://{{ srv_ip }}/redfish/v1/Systems/System.Embedded.1"
+        validate_certs: "{{ srv_validate_certs }}"
+        method: GET
+        headers: "{{ srv_headers }}"
+        status_code:
+          - 200
+      register: boot_once_system_info
+      no_log: "{{ srv_mask_sensitive_output }}"
+
+    # Newer iDRAC generations (e.g. iDRAC10) expose the ComputerSystem's Boot
+    # properties as read-only and require PATCHing the staged resource advertised
+    # via @Redfish.Settings instead. Older generations (e.g. iDRAC9) don't expose
+    # @Redfish.Settings here and accept a direct PATCH.
+    - name: Determine the writable boot-override URI
+      ansible.builtin.set_fact:
+        boot_once_override_uri: "{{ boot_once_system_info.json['@Redfish.Settings'].SettingsObject['@odata.id']
+          if (boot_once_system_info.json['@Redfish.Settings'] is defined)
+          else '/redfish/v1/Systems/System.Embedded.1' }}"
+
+    - name: Set the host to boot once from the VirtualMedia device
+      ansible.builtin.uri:
+        url: "https://{{ srv_ip }}{{ boot_once_override_uri }}"
+        validate_certs: "{{ srv_validate_certs }}"
+        method: PATCH
+        headers: "{{ srv_headers }}"
+        body_format: json
+        body:
+          Boot:
+            BootSourceOverrideTarget: "{{ srv_BootSourceOverrideTarget }}"
+            BootSourceOverrideEnabled: "Once"
+        status_code:
+          - 200
+          - 201
+          - 204
+      no_log: "{{ srv_mask_sensitive_output }}"
 
 - name: Pause for 5 seconds
   ansible.builtin.pause:

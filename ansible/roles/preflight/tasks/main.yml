@@ -40,14 +40,16 @@
           + ([manager_key_file] if manager_key_from_file | bool else [])) | unique }}
 
 # The HVM hosts get the public key of their key file (ssh_key_file; plus hvm_ssh_keys), so
-# the key the controller logs in with is always installed. A key with a
+# the key the controller logs in with is always installed. Paths compared resolved:
+# a host's own ansible_ssh_private_key_file comes with symlinks resolved, the same
+# key seen through hostvars does not (a symlinked key was left out of the seed). A key with a
 # passphrase: ssh-keygen cannot read it unattended, then <key>.pub is used.
 - name: Read the public keys of the HVM hosts' private keys
   run_once: true
   delegate_to: localhost
   ansible.builtin.shell: ssh-keygen -y -f "{{ item }}" </dev/null 2>/dev/null || cat "{{ item }}.pub"
-  loop: "{{ ssh_key.results | selectattr('stat.exists') | map(attribute='item')
-            | select('in', ansible_play_hosts_all | map('extract', hostvars, 'ssh_key_file')) | list }}"
+  loop: "{{ ssh_key.results | selectattr('stat.exists') | map(attribute='item') | map('realpath') | unique
+            | select('in', ansible_play_hosts_all | map('extract', hostvars, 'ssh_key_file') | map('realpath')) | list }}"
   register: hvm_pubkeys
   changed_when: false
   failed_when: false
@@ -80,7 +82,7 @@
 - name: Public keys for the admin user (derived + hvm_ssh_keys)
   ansible.builtin.set_fact:
     ssh_keys: >-
-      {{ (hvm_pubkeys.results | selectattr('item', 'equalto', ssh_key_file)
+      {{ (hvm_pubkeys.results | selectattr('item', 'equalto', ssh_key_file | realpath)
           | selectattr('rc', 'equalto', 0) | map(attribute='stdout') | map('trim') | list
           + hvm_ssh_keys | default([])) | unique }}
 

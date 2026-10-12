@@ -253,6 +253,7 @@ Build in this order; each milestone is usable on its own.
 - [ ] Morpheus Terraform provider coverage for cluster create/host add in the target VME version?
 - [ ] Remote Terraform state backend available at customer sites?
 - [ ] Minimum supported iLO/iDRAC firmware versions?
+- [ ] **Manager IP with a foreign reverse DNS name (found 2026-10-12, bare metal)**: the Manager VM has no DNS name of its own, so `hostname -f` takes the PTR record of `vme_manager.ip`. A leftover wildcard PTR (`*.apps.<cluster domain>`, an old OpenShift ingress address) made HPE's `morpheus-ctl reconfigure` (Chef) fail in the VM ("Property name's value *.apps... does not match regular expression"); cloud-init still reports done, the VM idles, and `hpe-vm` waits for `https://<ip>/ping` until our 90-minute timeout. Worked around by another IP. To decide: preflight check of the Manager IP's PTR (no record, or `vme_manager.hostname`[.domain]; an invalid hostname is an error), and/or detect the failed reconfigure early (watch the VM instead of waiting 90 minutes). Same idea for the HVM hosts' PTRs.
 
 ## Decisions log
 

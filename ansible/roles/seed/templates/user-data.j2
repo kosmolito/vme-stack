@@ -25,7 +25,9 @@ autoinstall:
   # Raw netplan from the site file (edge cases), verbatim.
   network: {{ netplan | to_json }}
 {% else %}
-  # Two NIC layouts (host_nic_layout), members always matched by MAC:
+  # Two NIC layouts (host_nic_layout), members always matched by MAC (lowercase:
+  # cloud-init compares the text with the kernel's lowercase MACs; an uppercase
+  # one counts as missing and the whole first boot fails):
   #   dedicated: bond0 = mgmt (IP on bond0.<mgmt_vlan>, or bond0 if vlan 0),
   #              bond1 = compute, no IP (hpe-vm: -m bond0.<vlan> -c bond1)
   #   shared:    bond0 carries everything; IP untagged on bond0, the switch
@@ -47,14 +49,14 @@ autoinstall:
 {% for mac in nics.mgmt %}
       mgmt{{ loop.index0 }}:
         match:
-          macaddress: "{{ mac }}"
+          macaddress: "{{ mac | lower }}"
         set-name: mgmt{{ loop.index0 }}
 {% endfor %}
 {% if host_nic_layout == 'dedicated' %}
 {% for mac in nics.compute %}
       cmpt{{ loop.index0 }}:
         match:
-          macaddress: "{{ mac }}"
+          macaddress: "{{ mac | lower }}"
         set-name: cmpt{{ loop.index0 }}
 {% endfor %}
 {% endif %}
