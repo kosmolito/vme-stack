@@ -26,10 +26,24 @@ tasks:
       # Python ansible-core does not support is built again.
       - cmp -s requirements-dev.txt .venv/requirements-dev.txt
       - .venv/bin/python -c "import sys; assert (3, 12) <= sys.version_info[:2] <= (3, 14)"
+    vars:
+      # For the messages below: the Python versions ansible-core 2.21 supports
+      # (3.12 to 3.14) found on this machine, and the version PYTHON is.
+      PYTHONS_FOUND:
+        sh: for v in 3.14 3.13 3.12; do if command -v python$v >/dev/null; then printf 'python%s ' $v; fi; done
+      PYTHON_VERSION:
+        sh: '{{.PYTHON}} -c "import sys; print(\"%d.%d\" % sys.version_info[:2])" 2>/dev/null || true'
     preconditions:
-      # ansible-core 2.21: Python 3.12 to 3.14
+      - sh: command -v "{{.PYTHON}}" >/dev/null
+        msg: >-
+          PYTHON={{.PYTHON}}: no such command.
+          {{if .PYTHONS_FOUND}}Found here: {{.PYTHONS_FOUND}}- e.g. task setup PYTHON={{index (splitList " " .PYTHONS_FOUND) 0}}
+          {{- else}}None of python3.12, python3.13, python3.14 found: install one (ansible-core 2.21 needs 3.12-3.14).{{end}}
       - sh: '{{.PYTHON}} -c "import sys; assert (3, 12) <= sys.version_info[:2] <= (3, 14)"'
-        msg: "{{.PYTHON}} is missing or not Python 3.12-3.14 (ansible-core 2.21); run e.g. task setup PYTHON=python3.14"
+        msg: >-
+          PYTHON={{.PYTHON}} is Python {{.PYTHON_VERSION | default "?"}}; ansible-core 2.21 needs 3.12-3.14.
+          {{if .PYTHONS_FOUND}}Found here: {{.PYTHONS_FOUND}}- e.g. task setup PYTHON={{index (splitList " " .PYTHONS_FOUND) 0}}
+          {{- else}}None of python3.12, python3.13, python3.14 found: install one.{{end}}
     cmds:
       - rm -rf .venv
       - '{{.PYTHON}} -m venv .venv'
