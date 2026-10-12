@@ -9,6 +9,11 @@ that section into the release's section (and refuses to release with it empty).
 
 ## [Unreleased]
 
+- **SSH works with Docker Desktop**: the image keeps SSH's control sockets in
+  `/tmp/ansible-cp` (`ANSIBLE_SSH_CONTROL_PATH_DIR`). ansible-navigator's `/runner`
+  can be a host mount where ssh cannot create them, and then every connection
+  failed with `muxserver_listen: link mux listener ... Bad file descriptor`.
+
 ## [0.1.8] - 2026-10-12
 
 - **[`docs/variables.md`](docs/variables.md)**: every site variable in one place,

@@ -47,6 +47,10 @@ additional_build_steps:
     # Rendered seeds and other run output go to build/ in the code dir: writable for
     # the EE user (uid 1000 or any uid, always group 0). Lost with the container.
     - RUN mkdir -p /opt/vme-stack/code/build && chgrp 0 /opt/vme-stack/code/build && chmod 0775 /opt/vme-stack/code/build
+    # SSH's control sockets inside the container: ansible-navigator's /runner can be a
+    # host mount where ssh cannot link them (Docker Desktop: "muxserver_listen: link
+    # mux listener ... Bad file descriptor", every connection fails).
+    - ENV ANSIBLE_SSH_CONTROL_PATH_DIR=/tmp/ansible-cp
     - ARG VME_STACK_VERSION=dev
     - ARG VME_TESTED=""
     - ARG VME_SOURCE=""
