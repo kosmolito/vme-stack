@@ -10,7 +10,7 @@
 version: "3"
 
 vars:
-  PYTHON: python3   # Python for .venv, 3.12 or newer; e.g. task setup PYTHON=python3.12
+  PYTHON: python3   # Python for .venv, 3.12 to 3.14; e.g. task setup PYTHON=python3.12
   EE_VERSION:
     sh: cat ee/VERSION
 
@@ -22,11 +22,14 @@ tasks:
   setup:
     desc: Build .venv from requirements-dev.txt (skipped while that file is unchanged)
     status:
-      # .venv keeps a copy of the requirements it was built from.
+      # .venv keeps a copy of the requirements it was built from; one built with a
+      # Python ansible-core does not support is built again.
       - cmp -s requirements-dev.txt .venv/requirements-dev.txt
+      - .venv/bin/python -c "import sys; assert (3, 12) <= sys.version_info[:2] <= (3, 14)"
     preconditions:
-      - sh: '{{.PYTHON}} -c "import sys; assert sys.version_info >= (3, 12)"'
-        msg: "{{.PYTHON}} is missing or older than 3.12; run e.g. task setup PYTHON=python3.12"
+      # ansible-core 2.21: Python 3.12 to 3.14
+      - sh: '{{.PYTHON}} -c "import sys; assert (3, 12) <= sys.version_info[:2] <= (3, 14)"'
+        msg: "{{.PYTHON}} is missing or not Python 3.12-3.14 (ansible-core 2.21); run e.g. task setup PYTHON=python3.14"
     cmds:
       - rm -rf .venv
       - '{{.PYTHON}} -m venv .venv'

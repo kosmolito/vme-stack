@@ -29,7 +29,7 @@ Site data lives only in the site file, a plain Ansible inventory (settings: `ans
 
 ## Checks and releases
 
-Before committing (as CI does), from the repo root: `task check` (`task --list` for the rest). `task lint`/`task test` build `.venv` from `requirements-dev.txt` first (`task setup`, `PYTHON=` ≥ 3.12). Releases: `task release VERSION=X.Y.Z` (needs an entry under `## [Unreleased]` in `CHANGELOG.md`), then `task release:push`. Details: `ee/README.md`.
+Before committing (as CI does), from the repo root: `task check` (`task --list` for the rest). `task lint`/`task test` build `.venv` from `requirements-dev.txt` first (`task setup`, `PYTHON=` 3.12 to 3.14: ansible-core 2.21). Releases: `task release VERSION=X.Y.Z` (needs an entry under `## [Unreleased]` in `CHANGELOG.md`), then `task release:push`. Details: `ee/README.md`.
 
 - Packages exactly as HPE ships them: no `apt upgrade` of ours; the installer's own update step runs as in a manual install.
 - Bare metal: platform `redfish` uses the vendored `roles/baremetal_lifecycle` (from the user's private repo, see its README; sync by hand). Untested on real hardware.
