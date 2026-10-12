@@ -10,7 +10,11 @@
 version: "3"
 
 vars:
-  PYTHON: python3   # Python for .venv, 3.12 to 3.14; e.g. task setup PYTHON=python3.12
+  # Python for .venv: PYTHON=<command>, else the newest that ansible-core 2.21
+  # supports (3.12 to 3.14) and can make a venv (Debian/Ubuntu: python3.X-venv)
+  # found here, else python3 (setup then says what is wrong).
+  PYTHON:
+    sh: for v in 3.14 3.13 3.12; do if python$v -c "import ensurepip" 2>/dev/null; then echo python$v; exit 0; fi; done; echo python3
   EE_VERSION:
     sh: cat ee/VERSION
 
@@ -28,9 +32,10 @@ tasks:
       - .venv/bin/python -c "import sys; assert (3, 12) <= sys.version_info[:2] <= (3, 14)"
     vars:
       # For the messages below: the Python versions ansible-core 2.21 supports
-      # (3.12 to 3.14) found on this machine, and the version PYTHON is.
+      # (3.12 to 3.14) found on this machine that can make a venv, and the version
+      # PYTHON is.
       PYTHONS_FOUND:
-        sh: for v in 3.14 3.13 3.12; do if command -v python$v >/dev/null; then printf 'python%s ' $v; fi; done
+        sh: for v in 3.14 3.13 3.12; do if python$v -c "import ensurepip" 2>/dev/null; then printf 'python%s ' $v; fi; done
       PYTHON_VERSION:
         sh: '{{.PYTHON}} -c "import sys; print(\"%d.%d\" % sys.version_info[:2])" 2>/dev/null || true'
     preconditions:
@@ -38,12 +43,17 @@ tasks:
         msg: >-
           PYTHON={{.PYTHON}}: no such command.
           {{if .PYTHONS_FOUND}}Found here: {{.PYTHONS_FOUND}}- e.g. task setup PYTHON={{index (splitList " " .PYTHONS_FOUND) 0}}
-          {{- else}}None of python3.12, python3.13, python3.14 found: install one (ansible-core 2.21 needs 3.12-3.14).{{end}}
+          {{- else}}None of python3.12, python3.13, python3.14 (with venv) found: install one (ansible-core 2.21 needs 3.12-3.14).{{end}}
       - sh: '{{.PYTHON}} -c "import sys; assert (3, 12) <= sys.version_info[:2] <= (3, 14)"'
         msg: >-
           PYTHON={{.PYTHON}} is Python {{.PYTHON_VERSION | default "?"}}; ansible-core 2.21 needs 3.12-3.14.
           {{if .PYTHONS_FOUND}}Found here: {{.PYTHONS_FOUND}}- e.g. task setup PYTHON={{index (splitList " " .PYTHONS_FOUND) 0}}
-          {{- else}}None of python3.12, python3.13, python3.14 found: install one.{{end}}
+          {{- else}}None of python3.12, python3.13, python3.14 (with venv) found: install one.{{end}}
+      - sh: '{{.PYTHON}} -c "import ensurepip"'
+        msg: >-
+          PYTHON={{.PYTHON}} cannot make a venv (Debian/Ubuntu: apt install python{{.PYTHON_VERSION}}-venv).
+          {{if .PYTHONS_FOUND}}Found here: {{.PYTHONS_FOUND}}- e.g. task setup PYTHON={{index (splitList " " .PYTHONS_FOUND) 0}}
+          {{- else}}No python3.12-3.14 with venv found here.{{end}}
     cmds:
       - rm -rf .venv
       - '{{.PYTHON}} -m venv .venv'
