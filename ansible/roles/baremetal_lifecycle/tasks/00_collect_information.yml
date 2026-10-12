@@ -37,7 +37,11 @@
 
 - name: Fail when the BMC refuses the credentials
   ansible.builtin.fail:
-    msg: "Redfish login refused by {{ srv_ip }} (session: 401, basic auth: {{ redfish_basic.status | default('-') }}): check the BMC user and password"
+    # uri's msg names the HTTP status or the connection error, never the credentials.
+    msg: >-
+      Redfish login refused by {{ srv_ip }} (session: 401, basic auth: {{ redfish_basic.status | default('-') }}:
+      {{ redfish_basic.msg | default('-') }}): {{ 'check the BMC user and password' if redfish_basic.status | default(0) == 401
+      else 'the BMC did not answer the basic auth request (e.g. IP blocking after failed logins: iDRAC Settings > Network > IP Blocking)' }}
   when: redfish_session.status == 401 and redfish_basic.status | default(0) != 200
 
 - name: Set session_token and session_id fact
