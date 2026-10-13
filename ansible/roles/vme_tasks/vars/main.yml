@@ -1,0 +1,9 @@
+---
+# vme_manager.tasks[].type (and catalog.yml's type): vme-stack's names for the
+# Manager's task types (GET /api/task-types code; the UI shows the name). Only the
+# types vme-stack can set up; keep the choices of vme_manager.tasks.type in
+# roles/preflight/meta/argument_specs.yml in step. Later: powershell -> winrmTask
+# (PowerShell Script), ansible -> ansibleTask, python -> jythonTask (Python Script,
+# runs on the Manager only).
+vt_types_map:
+  bash: {code: script, ui: Shell Script}

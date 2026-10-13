@@ -16,7 +16,10 @@ empty one).
 - `vme_manager.tasks`: the Manager's task library (Library > Automation >
   Tasks), run on demand on a VM or host. Tasks come from vme-stack's catalog
   (`catalog: <key>`; keys start with their kind, e.g. `bash-`) or from a script
-  next to the site (`file:`). Created when missing, updated when the script,
+  next to the site (`file:`, with an explicit `type`, so far `bash` = the
+  Manager's Shell Script; not guessed from the file). The run checks the
+  Manager offers each type (`GET /api/task-types`; the license decides) before
+  creating anything. Created when missing, updated when the script,
   target or sudo differs; marked with the label `vme-stack`, and a task of the
   same name without it is never changed.
 - Catalog task `bash-linux-webserver`: nginx with a self-signed TLS

@@ -75,7 +75,7 @@ all:
         - catalog: bash-linux-webserver   # from vme-stack's catalog (ansible/roles/vme_tasks/files/catalog)
         - file: tasks/linux-summary.sh    # a script next to this file
           name: "Linux: system summary"
-          type: shell                 # default; the only type so far
+          type: bash                  # required with file: bash = the Manager's Shell Script (the only type so far)
           target: resource            # default: runs on the VM or host it is started on (local: in the Manager)
           sudo: false                 # default true
       datastore: nfs-prod             # move the Manager's disk to this datastore of its host's cluster

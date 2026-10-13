@@ -139,7 +139,14 @@ argument_specs:
                   Give catalog or file.
               file: {type: str, description: "Script file, relative to the site directory (e.g. tasks/hvm-health.sh). Give catalog or file."}
               name: {type: str, description: "The task's name in the Manager. Default: the catalog's name; required with file."}
-              type: {type: str, choices: [shell], description: "Task type: shell (bash script). Default shell (the catalog's for catalog)."}
+              type:
+                type: str
+                choices: [bash]
+                description: >-
+                  Task type, stated explicitly (not guessed from the file): bash = the Manager's Shell Script (task type
+                  code script; the only type so far; later e.g. powershell = PowerShell Script, code winrmTask).
+                  Required with file; catalog entries take the catalog's. The run checks the Manager offers it (the
+                  license decides).
               target:
                 type: str
                 choices: [resource, local]

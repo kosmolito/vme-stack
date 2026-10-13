@@ -2,13 +2,14 @@
 # vme-stack's task catalog: tasks a site adds to the Manager's library by key
 # (vme_manager.tasks: [{catalog: <key>}]). The key starts with its kind
 # (bash-, later powershell-, ansible-); the script is <key>.sh next to this file.
-# name: the task's name in the Manager (a site entry may set its own);
+# name: the task's name in the Manager (a site entry may set its own); type:
+# vme-stack's task type name (roles/vme_tasks/vars/main.yml: bash = Shell Script);
 # target: resource = runs on the VM or host it is started on; sudo: run as root.
 bash-linux-webserver:
   name: "Linux: web server (nginx, self-signed TLS)"
   description: >-
     nginx serving a page on HTTPS with a self-signed certificate for the VM's name and IPs;
     HTTP redirects to HTTPS. Ubuntu/Debian and RHEL family. Safe to re-run (keeps the page and certificate).
-  type: shell
+  type: bash
   target: resource
   sudo: true

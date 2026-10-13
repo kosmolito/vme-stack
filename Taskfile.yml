@@ -98,6 +98,8 @@ tasks:
       - .venv/bin/python scripts/release.py docs
       # docs/variables.md matches the argument spec (task docs writes it)
       - .venv/bin/python scripts/variables_doc.py --check
+      # task types: argument spec choices, the mapping to Manager codes, the catalog
+      - .venv/bin/python ansible/tests/check_task_catalog.py
 
   docs:
     desc: Write docs/variables.md from the site variables' argument spec

@@ -71,7 +71,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_manager.tasks[].catalog` | str |  | Key of a vme-stack catalog task (roles/vme_tasks/files/catalog/catalog.yml), e.g. bash-linux-webserver. Give catalog or file. |
 | `vme_manager.tasks[].file` | str |  | Script file, relative to the site directory (e.g. tasks/hvm-health.sh). Give catalog or file. |
 | `vme_manager.tasks[].name` | str |  | The task's name in the Manager. Default: the catalog's name; required with file. |
-| `vme_manager.tasks[].type` | str: `shell` |  | Task type: shell (bash script). Default shell (the catalog's for catalog). |
+| `vme_manager.tasks[].type` | str: `bash` |  | Task type, stated explicitly (not guessed from the file): bash = the Manager's Shell Script (task type code script; the only type so far; later e.g. powershell = PowerShell Script, code winrmTask). Required with file; catalog entries take the catalog's. The run checks the Manager offers it (the license decides). |
 | `vme_manager.tasks[].target` | str: `resource`, `local` |  | resource: runs on the VM or host it is started on; local: inside the Manager VM. Default resource. |
 | `vme_manager.tasks[].sudo` | bool |  | Run the script as root (sudo). Default true. |
 | `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists. Default: stays local. |

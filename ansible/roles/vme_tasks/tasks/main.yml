@@ -1,7 +1,8 @@
 ---
 # Tasks of the Manager's library (vme_manager.tasks): from vme-stack's catalog
 # (files/catalog/) or a script next to the site. POST/PUT /api/tasks, the same fields
-# in API 9.0.2 and 9.1.0: taskType script, executeTarget, taskOptions shell.sudo,
+# in API 9.0.2 and 9.1.0: taskType (the site's type mapped to the Manager's code,
+# vars/main.yml: bash -> script), executeTarget, taskOptions shell.sudo,
 # file {sourceType local, content}. Created when missing, updated when the script or a
 # setting differs; marked with the label vme-stack. A task of the same name without
 # that label is someone else's: the run stops instead of changing it.
@@ -20,12 +21,44 @@
           {%- for t in vme_manager.tasks -%}
           {%-   set c = catalog[t.catalog] if t.catalog is defined else {} -%}
           {%-   set script = (vt_catalog_dir ~ '/' ~ t.catalog ~ '.sh') if t.catalog is defined else (inventory_dir ~ '/' ~ t.file) -%}
+          {%-   set type = t.type | default(c.type) -%}
           {{-   out.append({'name': t.name | default(c.name | default('')),
                             'origin': ('catalog ' ~ t.catalog) if t.catalog is defined else ('file ' ~ t.file),
-                            'type': t.type | default(c.type | default('shell')),
+                            'type': type,
+                            'code': vt_types_map[type].code,
                             'target': t.target | default(c.target | default('resource')),
                             'sudo': t.sudo | default(c.sudo | default(true)) | bool,
                             'content': lookup('ansible.builtin.file', script)}) -}}
+          {%- endfor -%}
+          {{ out }}
+
+    # The task types this Manager offers (they follow the license: e.g. VME core has
+    # script, winrmTask, restartTask): checked before anything is created.
+    - name: Read the Manager's task types
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/task-types?max=1000"
+        validate_certs: false
+        headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vt_types
+      no_log: true
+
+    - name: Check the Manager offers each task type
+      ansible.builtin.assert:
+        that: missing | length == 0
+        fail_msg: >-
+          {{ ['These tasks need task types this Manager does not offer (license tier '
+              ~ (vme_license_now.license.productTier | default('?')) ~ '; it offers: '
+              ~ vt_types.json.taskTypes | map(attribute='name') | join(', ') ~ '):'] + lines }}
+        quiet: true
+      vars:
+        offered: "{{ vt_types.json.taskTypes | map(attribute='code') | list }}"
+        missing: "{{ vt_want | rejectattr('code', 'in', offered) | list }}"
+        lines: >-
+          {%- set out = [] -%}
+          {%- for t in missing -%}
+          {{-   out.append(t.name ~ ': type ' ~ t.type ~ ' (Manager: ' ~ vt_types_map[t.type].ui ~ ', code ' ~ t.code ~ ')') -}}
           {%- endfor -%}
           {{ out }}
 
@@ -52,6 +85,7 @@
           {%-     if (have.file | default({}, true)).content | default('', true) | replace('\r', '') | trim != w.content | replace('\r', '') | trim -%}
           {{-       diff.append('script') -}}
           {%-     endif -%}
+          {%-     if (have.taskType | default({}, true)).code | default('') != w.code -%}{{ diff.append('type') }}{%- endif -%}
           {%-     if have.executeTarget | default('') != w.target -%}{{ diff.append('target') }}{%- endif -%}
           {%-     if (have.taskOptions | default({}, true))['shell.sudo'] | default('off', true) != ('on' if w.sudo else 'off') -%}
           {{-       diff.append('sudo') -}}
@@ -84,7 +118,7 @@
         body:
           task:
             name: "{{ item.name }}"
-            taskType: {code: script}
+            taskType: {code: "{{ item.code }}"}
             executeTarget: "{{ item.target }}"
             labels: "{{ item.labels }}"
             taskOptions: {shell.sudo: "{{ 'on' if item.sudo else 'off' }}"}

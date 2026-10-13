@@ -172,6 +172,8 @@ def _format_errors(site, roles_dir):
             else:
                 if not t.get("name"):
                     errs.append(f"{label}: file '{t['file']}' needs a name (the task's name in the Manager)")
+                if not t.get("type"):
+                    errs.append(f"{label}: file '{t['file']}' needs a type (bash); it is not guessed from the file")
                 if t["file"] not in (mgr.get("task_files_present") or []):
                     errs.append(f"{label}: file '{t['file']}' not found in the site directory")
                 if t.get("name"):

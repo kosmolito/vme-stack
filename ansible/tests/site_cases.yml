@@ -355,7 +355,17 @@ cases:
             tasks:
               - file: tasks/missing.sh
                 name: X
+                type: bash
     expect: file 'tasks/missing.sh' not found
+  - name: task file without a type
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - file: tasks/x.sh
+                name: X
+    expect: needs a type (bash)
   - name: two tasks with one name
     patch:
       all:
@@ -372,8 +382,8 @@ cases:
           vme_manager:
             tasks:
               - catalog: bash-linux-webserver
-                type: powershell
-    expect: shell
+                type: winrmTask
+    expect: bash
   - name: Manager without the VME ISO
     patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {vme_iso_path: null}}}}}}}
     expect: "vme_manager needs the deploy server's media.vme_iso_path"
