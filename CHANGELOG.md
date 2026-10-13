@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-13
+
 ### Added
 
 - A GitHub release for each version, with its changelog section as the notes.
