@@ -55,6 +55,18 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_manager.smtp.user` | str |  | SMTP login. Default: none (no login). |
 | `vme_manager.smtp.password` | str |  | *Secret.* Password of user. |
 | `vme_manager.smtp.restart_webui_on_update` | bool |  | Restart the Manager's UI service (morpheus-ui, several minutes without UI and API) after a run changed the SMTP settings: the Manager uses settings set through its API only after a restart. Default true. false: they apply at the next restart of morpheus-ui. |
+| `vme_manager.identity_sources` | list of dict |  | Identity sources of the Manager's master tenant (users log in with their directory account). Created when missing, updated when a setting differs; one removed from the site stays on the Manager. |
+| `vme_manager.identity_sources[].name` | str | yes | Name of the identity source in the Manager. |
+| `vme_manager.identity_sources[].type` | str: `active_directory` |  | Directory type. Default active_directory (the only one so far). |
+| `vme_manager.identity_sources[].server` | str | yes | Domain controller: name or IP (the Manager connects to it). |
+| `vme_manager.identity_sources[].domain` | str | yes | AD domain, e.g. corp.example.com. |
+| `vme_manager.identity_sources[].ldaps` | bool |  | LDAPS (port 636). Default true. The Manager must trust the domain controller's certificate. |
+| `vme_manager.identity_sources[].bind_user` | str | yes | Account name (sAMAccountName) the Manager searches the directory with, e.g. svc-vme-ldap; the Manager logs in as &lt;bind_user&gt;@&lt;domain&gt;. A plain domain user is enough (read-only). |
+| `vme_manager.identity_sources[].bind_password` | str | yes | *Secret.* Password of bind_user. |
+| `vme_manager.identity_sources[].required_group` | str | yes | Only members of this AD group can log in; admins too. It must exist (the Manager checks). Not a primary group such as Domain Users (AD does not list it as a membership). |
+| `vme_manager.identity_sources[].nested_groups` | bool |  | Count membership through nested groups (Include Member Groups). Default true. |
+| `vme_manager.identity_sources[].default_role` | str |  | Role every user of the source gets; the roles of matching role_mappings groups add to it. Must not be an admin role. Default: the Manager's non-admin user role (User Admin on VME 9.0). |
+| `vme_manager.identity_sources[].role_mappings` | dict |  | Manager role name -&gt; list of AD group names, e.g. {System Admin: [VME-Admins]}. Replaces the source's mappings (the set in the site is the whole set). Default none. |
 | `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists. Default: stays local. |
 | `vme_manager.autostart` | bool |  | Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it. |
 | `vme_manager.ssh_private_key_file` | str |  | The Manager's key pair to every cluster's hosts as files: this and &lt;file&gt;.pub. It is stored in the Manager. Default: the Manager host's login key (its ansible_ssh_private_key_file, else ~/.ssh/id_ed25519). |

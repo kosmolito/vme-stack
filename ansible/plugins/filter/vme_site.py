@@ -152,6 +152,32 @@ def _format_errors(site):
                 errs.append("vme_manager.smtp: tls (STARTTLS) and ssl (TLS from the start) exclude each other")
             if smtp.get("has_user") != smtp.get("has_password"):
                 errs.append("vme_manager.smtp.user and password go together (or neither: no login)")
+        sources = mgr.get("identity_sources") or []
+        for n in _dupes([s["name"] for s in sources]):
+            errs.append(f"vme_manager.identity_sources: name '{n}' is used more than once")
+        for s in sources:
+            label = f"vme_manager.identity_sources '{s['name']}'"
+            if not re.match(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$", str(s["server"])):
+                errs.append(f"{label}: server '{s['server']}' is not a host name or IP")
+            elif s.get("ldaps", True) and _is_ipv4(str(s["server"])):
+                errs.append(
+                    f"{label}: server {s['server']} is an IP; with ldaps the Manager checks the domain controller's"
+                    " certificate against the name it connects to, so give the DC's DNS name (as in its certificate)"
+                )
+            if not re.match(r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$", str(s["domain"])):
+                errs.append(f"{label}: domain '{s['domain']}' is not a DNS domain like corp.example.com")
+            if not re.match(r"^[^@\\/\s\"\[\]:;|=+*?<>,]{1,64}$", str(s["bind_user"])):
+                errs.append(
+                    f"{label}: bind_user '{s['bind_user']}' is not an account name like svc-vme-ldap"
+                    f" (the Manager logs in as <bind_user>@{s['domain']}; no UPN, DOMAIN\\ or DN)"
+                )
+            if not str(s.get("required_group", "")).strip():
+                errs.append(f"{label}: required_group is empty")
+            if str(s.get("default_role", "")).strip().lower() == "system admin":
+                errs.append(f"{label}: default_role must not be an admin role (System Admin)")
+            for role, groups in (s.get("role_mappings") or {}).items():
+                if not isinstance(groups, list) or not groups or not all(str(g).strip() for g in groups):
+                    errs.append(f"{label}: role_mappings '{role}' needs a list of AD group names")
     for c in site.get("vme_clouds", []):
         url = (c.get("vcenter") or {}).get("url")
         if url and not re.match(r"^https://[^\s/]+(/\S*)?$", url):
@@ -400,6 +426,27 @@ def vme_site_errors(site, roles_dir):
 HVM_LAYOUT = re.compile(r"^mvm-(\d+)\.(\d+)-ubuntu-24\.04-std-morpheus-amd64$")
 
 
+def vme_identity_sources(sources):
+    """vme_manager.identity_sources with defaults, without the bind passwords."""
+    out = []
+    for s in sources or []:
+        out.append(
+            {
+                "name": s["name"],
+                "type": s.get("type", "active_directory"),
+                "server": s["server"],
+                "domain": s["domain"],
+                "ldaps": bool(s.get("ldaps", True)),
+                "bind_user": s["bind_user"],
+                "required_group": s["required_group"],
+                "nested_groups": bool(s.get("nested_groups", True)),
+                "default_role": s.get("default_role", ""),
+                "role_mappings": {str(r): list(g or []) for r, g in (s.get("role_mappings") or {}).items()},
+            }
+        )
+    return out
+
+
 def newest_hvm_layout(codes):
     """The newest standard HVM cluster layout code among codes ('' if none):
     mvm-1.2-... on VME 8.1, mvm-1.3-... on 9.0."""
@@ -409,4 +456,8 @@ def newest_hvm_layout(codes):
 
 class FilterModule:
     def filters(self):
-        return {"vme_site_errors": vme_site_errors, "newest_hvm_layout": newest_hvm_layout}
+        return {
+            "vme_site_errors": vme_site_errors,
+            "newest_hvm_layout": newest_hvm_layout,
+            "vme_identity_sources": vme_identity_sources,
+        }

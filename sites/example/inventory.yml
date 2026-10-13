@@ -58,6 +58,19 @@ all:
         password: "{{ vault_vme_smtp }}"   # secret
         restart_webui_on_update: true # default: restart morpheus-ui after a change (several minutes
                                       # without UI/API); the Manager uses API-set SMTP settings only after it
+      identity_sources:               # users log in with their AD account; omit for local users only
+        - name: corp-ad
+          type: active_directory      # default; the only type so far
+          server: dc01.corp.example.com   # the DC's DNS name (with ldaps the name in its certificate, not an IP)
+          domain: corp.example.com
+          ldaps: true                 # default; port 636, the Manager must trust the DC's certificate
+          bind_user: svc-vme-ldap     # account name only: the Manager logs in as <bind_user>@<domain>; checked on save
+          bind_password: "{{ vault_vme_ad_bind }}"   # secret
+          required_group: VME-Users   # required: only its members can log in; must exist (checked on save)
+          nested_groups: true         # default; membership through nested groups counts
+          # default_role: User Admin  # default: the Manager's non-admin user role; never an admin role
+          role_mappings:              # Manager role: [AD groups]; the whole set (replaces the source's)
+            System Admin: [VME-Admins]
       datastore: nfs-prod             # move the Manager's disk to this datastore of its host's cluster
       autostart: false                # default (hpe-vm's); true: libvirt starts the VM with its host
       # The Manager's key pair to every cluster's hosts (stored in the Manager): a private key

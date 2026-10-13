@@ -1,0 +1,176 @@
+---
+# One identity source of vme_manager.identity_sources (src: its derived settings,
+# without the password). POST/PUT /api/user-sources; the same fields in API 9.0.2 and
+# 9.1.0. The Manager shows the bind password only masked, so a fingerprint of the
+# password set last is kept in Cypher, as for SMTP; -e identity_password_update=true
+# sends it anyway.
+- name: "Identity source, work out roles and the current state: {{ src.name }}"
+  ansible.builtin.set_fact:
+    idp_default_role: "{{ idp_roles | selectattr('authority', 'equalto', want_default) | first | default({}) }}"
+    idp_missing_roles: "{{ ([want_default] + src.role_mappings.keys() | list) | reject('in', idp_roles | map(attribute='authority')) | list }}"
+    idp_existing: "{{ idp_sources | selectattr('name', 'equalto', src.name) | first | default({}) }}"
+    idp_password: "{{ (vme_manager.identity_sources | selectattr('name', 'equalto', src.name) | first).bind_password }}"
+    idp_cypher_url: "https://{{ manager.ip }}/api/cypher/secret/vme-stack/identity-source-{{ src.name | regex_replace('[^A-Za-z0-9_-]', '_') }}"
+  vars:
+    # Default: the Manager's non-admin user role (roleType user; on VME 9.0: User Admin).
+    want_default: >-
+      {{ src.default_role if src.default_role else
+         (idp_roles | selectattr('roleType', 'equalto', 'user') | map(attribute='authority') | first | default('')) }}
+  no_log: true
+
+- name: "Identity source, check the roles: {{ src.name }}"
+  ansible.builtin.assert:
+    that:
+      - idp_missing_roles | length == 0
+      - idp_default_role.roleType | default('') == 'user'
+    fail_msg: >-
+      {{ 'Roles not found on the Manager: ' ~ idp_missing_roles | join(', ') ~ ' (it has: '
+         ~ idp_roles | map(attribute='authority') | join(', ') ~ ')' if idp_missing_roles
+         else 'default_role ' ~ idp_default_role.authority | default('?') ~ ' is no non-admin user role (roleType user)' }}
+    quiet: true
+
+- name: "Identity source, read it: {{ src.name }}"
+  ansible.builtin.uri:
+    url: "https://{{ manager.ip }}/api/user-sources/{{ idp_existing.id }}"
+    validate_certs: false
+    headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+    return_content: true
+  delegate_to: "{{ probe_from }}"
+  register: idp_current
+  when: idp_existing | length > 0
+  no_log: true
+
+- name: "Identity source, read the fingerprint of the bind password set last: {{ src.name }}"
+  ansible.builtin.uri:
+    url: "{{ idp_cypher_url }}"
+    validate_certs: false
+    headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+    status_code: [200, 404]
+    return_content: true
+  delegate_to: "{{ probe_from }}"
+  register: idp_record
+  no_log: true
+
+# The settings vme-stack sets, in the API's terms, and what differs from the Manager.
+- name: "Identity source, compare with the site: {{ src.name }}"
+  ansible.builtin.set_fact:
+    idp_want:
+      name: "{{ src.name }}"
+      type: activeDirectory
+      account: {id: "{{ idp_master_id }}"}
+      defaultAccountRole: {id: "{{ idp_default_role.id }}"}
+      config:
+        url: "{{ src.server }}"
+        domain: "{{ src.domain }}"
+        useSSL: "{{ 'on' if src.ldaps else 'off' }}"
+        bindingUsername: "{{ src.bind_user }}"
+        requiredGroup: "{{ src.required_group }}"
+        searchMemberGroups: "{{ src.nested_groups }}"
+      roleMappings: >-
+        {%- set out = [] -%}
+        {%- for role, groups in src.role_mappings.items() -%}
+        {%-   for g in groups -%}
+        {{-     out.append({'mappedRole': {'id': (idp_roles | selectattr('authority', 'equalto', role) | first).id}, 'sourceRoleName': g}) -}}
+        {%-   endfor -%}
+        {%- endfor -%}
+        {{ out }}
+    idp_diff: >-
+      {%- set out = [] -%}
+      {%- if not have -%}{{ out.append('new') }}
+      {%- else -%}
+      {%-   if have.type | default('') != 'activeDirectory' -%}{{ out.append('type') }}{%- endif -%}
+      {%-   if (have.defaultAccountRole | default({}, true)).id | default(0) | int != idp_default_role.id | int -%}{{ out.append('default_role') }}{%- endif -%}
+      {%-   for k, v in {'url': src.server, 'domain': src.domain, 'useSSL': 'on' if src.ldaps else 'off',
+                         'bindingUsername': src.bind_user, 'requiredGroup': src.required_group,
+                         'searchMemberGroups': src.nested_groups}.items()
+              if (have.config | default({}, true))[k] | default('', true) | string | lower != v | default('', true) | string | lower -%}
+      {{-     out.append(k) -}}
+      {%-   endfor -%}
+      {%-   set have_maps = have.roleMappings | default([], true) | map(attribute='mappedRole.id') | map('int') | zip(
+                              have.roleMappings | default([], true) | map(attribute='sourceRoleName')) | map('join', '|') | sort -%}
+      {%-   set want_maps = [] -%}
+      {%-   for role, groups in src.role_mappings.items() -%}{%- for g in groups -%}
+      {{-     want_maps.append((idp_roles | selectattr('authority', 'equalto', role) | first).id ~ '|' ~ g) -}}
+      {%-   endfor -%}{%- endfor -%}
+      {%-   if have_maps | list != want_maps | sort -%}{{ out.append('role_mappings') }}{%- endif -%}
+      {%-   if identity_password_update | default(false) | bool
+              or (record.salt | default('') ~ idp_password) | hash('sha256') != record.fingerprint | default('') -%}
+      {{-     out.append('bind_password') -}}
+      {%-   endif -%}
+      {%- endif -%}
+      {{ out }}
+  vars:
+    have: "{{ idp_current.json.userSource | default({}) if idp_current is not skipped else {} }}"
+    record: "{{ idp_record.json.data | default({}) if idp_record.status == 200 else {} }}"
+  no_log: true
+
+- name: "Identity source, set: {{ src.name ~ ': ' ~ (idp_action if idp_diff else 'up to date') }}"
+  ansible.builtin.uri:
+    url: "https://{{ manager.ip }}/api/user-sources{{ '/' ~ idp_existing.id if idp_existing | length > 0 else '' }}"
+    method: "{{ 'PUT' if idp_existing | length > 0 else 'POST' }}"
+    validate_certs: false
+    headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+    body_format: json
+    body:
+      userSource: "{{ idp_want | combine({'config': {'bindingPassword': idp_password}}, recursive=true) }}"
+    status_code: [200, 201, 400]
+    return_content: true
+  vars:
+    idp_action: "{{ 'create' if idp_existing | length == 0 else 'update ' ~ idp_diff | join(', ') }}"
+  delegate_to: "{{ probe_from }}"
+  register: idp_set
+  when: idp_diff | length > 0
+  changed_when: true
+  no_log: true
+
+- name: "Identity source, check the Manager accepted it: {{ src.name }}"
+  ansible.builtin.assert:
+    that: idp_set.json.success | default(false) or idp_set.json.userSource is defined
+    fail_msg: >-
+      The Manager refused identity source {{ src.name }}: HTTP {{ idp_set.status | default('?') }}
+      {{ idp_set.json.msg | default('') }} {{ idp_set.json.errors | default({}) }}.
+      The Manager checks a source on save: it logs in to {{ src.server }} as {{ src.bind_user }}@{{ src.domain }}
+      ("Confirm ..." on every field when that fails) and looks up required_group and the role_mappings groups
+      ("Group not found"): check bind_user and bind_password, that the groups exist, that the Manager reaches {{ src.server }}
+      on port {{ 636 if src.ldaps else 389 }}{{ ' and trusts its certificate' if src.ldaps else '' }};
+      its log (/var/log/morpheus/morpheus-ui/current, ActiveDirectoryUserService) has the cause
+      (e.g. LDAP error 49 data 52e = wrong user or password).
+    quiet: true
+  when: idp_set is not skipped
+
+- name: "Identity source, make a salt for the bind password fingerprint: {{ src.name }}"
+  ansible.builtin.set_fact:
+    idp_salt: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['hexdigits']) }}"
+  when: idp_set is not skipped
+  no_log: true
+
+- name: "Identity source, store the fingerprint of the bind password: {{ src.name }}"
+  ansible.builtin.uri:
+    url: "{{ idp_cypher_url }}?ttl=0"
+    method: POST
+    validate_certs: false
+    headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+    body_format: json
+    body:
+      salt: "{{ idp_salt }}"
+      fingerprint: "{{ (idp_salt ~ idp_password) | hash('sha256') }}"
+    return_content: true
+  delegate_to: "{{ probe_from }}"
+  when: idp_set is not skipped
+  changed_when: true
+  no_log: true
+
+# Where to find it in the UI: identity sources belong to the master tenant; a license
+# without tenant management (features.tenants false, e.g. VME) hides
+# Administration > Tenants, but the tenant's page works when opened directly.
+- name: "Identity source, report: {{ src.name }}"
+  ansible.builtin.debug:
+    msg: >-
+      Identity source {{ src.name }} ({{ src.server }}, {{ 'LDAPS' if src.ldaps else 'LDAP' }}):
+      {{ 'created' if idp_existing | length == 0 and idp_set is not skipped else 'updated' if idp_set is not skipped else 'up to date' }};
+      license tier {{ lic.productTier | default('?') }}; in the UI:
+      {{ 'Administration > Tenants > ' ~ tenant ~ ' > Identity Sources' if lic.features.tenants | default(false) | bool
+         else manager.url ~ '/admin/accounts/' ~ idp_master_id ~ ' (tab Identity Sources; this license hides Administration > Tenants)' }}
+  vars:
+    lic: "{{ vme_license_now.license | default({}) }}"
+    tenant: "{{ (idp_lists.results[1].json.accounts | selectattr('master') | first).name }}"

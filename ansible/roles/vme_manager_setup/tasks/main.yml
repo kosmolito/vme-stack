@@ -328,3 +328,43 @@
           {{ 'login ' ~ manager.smtp.user if manager.smtp.user else 'no login' }}){{ ', set now' if vme_smtp_set is not skipped else '' }}{{
           ' (morpheus-ui restarted)' if vme_ui_restart is not skipped else
           '; they apply at the next restart of morpheus-ui (smtp.restart_webui_on_update: false)' if vme_smtp_set is not skipped else '' }}
+
+# Identity sources (vme_manager.identity_sources) of the master tenant: the Manager's
+# roles, tenants and sources read once, then each source (identity_source.yml).
+- name: Identity sources
+  when: manager.identity_sources | length > 0
+  block:
+    # The license decides (features.identityServices; e.g. VME's core tier has it,
+    # without tenant management): check it rather than the tier's name.
+    - name: Check the license includes identity sources
+      ansible.builtin.assert:
+        that: vme_license_now.license.features.identityServices | default(false) | bool
+        fail_msg: >-
+          The Manager's license (tier {{ vme_license_now.license.productTier | default('?') }}) does not include
+          identity sources (features.identityServices is false): remove vme_manager.identity_sources from the site
+          or install a license that includes them (vme_manager.license_key).
+        quiet: true
+
+    - name: Read the Manager's roles, tenants and identity sources
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/{{ item }}"
+        validate_certs: false
+        headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      loop: ["roles?max=1000", "accounts?max=1000", "user-sources?max=1000"]
+      register: idp_lists
+      no_log: true
+
+    - name: Note roles, the master tenant and the identity sources
+      ansible.builtin.set_fact:
+        idp_roles: "{{ idp_lists.results[0].json.roles }}"
+        idp_master_id: "{{ (idp_lists.results[1].json.accounts | selectattr('master') | first).id }}"
+        idp_sources: "{{ idp_lists.results[2].json.userSources }}"
+
+    - name: Set each identity source
+      ansible.builtin.include_tasks: identity_source.yml
+      loop: "{{ manager.identity_sources }}"
+      loop_control:
+        loop_var: src
+        label: "{{ src.name }}"

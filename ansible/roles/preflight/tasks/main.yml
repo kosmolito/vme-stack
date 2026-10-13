@@ -180,6 +180,7 @@
       {{ manager.url | urlsplit('hostname')
          if manager.url is defined and manager.url | urlsplit('hostname') is not match('^[0-9.]+$') else '' }}
     ntp_dns_names: "{{ ntp_servers | reject('match', '^[0-9.]+$') | list }}"
+    idp_dns_names: "{{ manager.identity_sources | default([]) | map(attribute='server') | reject('match', '^[0-9.]+$') | unique | list }}"
 
 - name: Probe DNS and NTP from {{ probe_from }}
   run_once: true
@@ -192,7 +193,7 @@
       --ptr {{ ptr_ips | join(',') | quote }}
     executable: python3
   vars:
-    resolve_names: "{{ ([manager_dns_name] if manager_dns_name | length > 0 else []) + ntp_dns_names }}"
+    resolve_names: "{{ (([manager_dns_name] if manager_dns_name | length > 0 else []) + ntp_dns_names + idp_dns_names) | unique }}"
     ptr_ips: "{{ (([manager.ip] if manager.ip is defined else []) + ansible_play_hosts_all | map('extract', hostvars, 'ip') | list) | unique }}"
   register: net_probe_raw
   changed_when: false
@@ -202,7 +203,7 @@
   ansible.builtin.set_fact:
     net_problems: >-
       {{ ([] if dns_ok | length > 0 else ['no DNS server answers from ' ~ probe_from ~ ': ' ~ dns | join(', ')])
-         + manager_dns_problems + ptr_findings.problems }}
+         + manager_dns_problems + ptr_findings.problems + idp_dns_problems }}
     net_warnings: >-
       {{ (probe.dns | dict2items | rejectattr('value.ok') |
            map(attribute='key') | map('regex_replace', '^(.*)$', 'DNS server \1 does not answer') | list) +
@@ -247,6 +248,15 @@
       {%- for server, r in probe.resolve[manager_dns_name] | default({}) | dictsort if r.ok and manager.ip not in r.ips -%}
       {{ out.append('DNS server ' ~ server ~ ' resolves the Manager URL name ' ~ manager_dns_name ~ ' to '
                     ~ (r.ips | join(', ') if r.ips else 'nothing') ~ ', expected ' ~ manager.ip) }}
+      {%- endfor -%}
+      {{ out }}
+    # Identity source servers: the Manager (with the site's DNS) connects to them by name.
+    idp_dns_problems: >-
+      {%- set out = [] -%}
+      {%- for name in idp_dns_names -%}
+      {%-   for server, r in probe.resolve[name] | default({}) | dictsort if r.ok and not r.ips -%}
+      {{ out.append('DNS server ' ~ server ~ ' has no address for identity source server ' ~ name) }}
+      {%-   endfor -%}
       {%- endfor -%}
       {{ out }}
     ntp_dns_warnings: >-

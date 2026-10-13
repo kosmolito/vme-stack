@@ -84,6 +84,45 @@ argument_specs:
                   Restart the Manager's UI service (morpheus-ui, several minutes without UI and API) after a run
                   changed the SMTP settings: the Manager uses settings set through its API only after a restart.
                   Default true. false: they apply at the next restart of morpheus-ui.
+          identity_sources:
+            description: >-
+              Identity sources of the Manager's master tenant (users log in with their directory account).
+              Created when missing, updated when a setting differs; one removed from the site stays on the Manager.
+            type: list
+            elements: dict
+            options:
+              name: {type: str, required: true, description: Name of the identity source in the Manager.}
+              type: {type: str, choices: [active_directory], description: Directory type. Default active_directory (the only one so far).}
+              server: {type: str, required: true, description: "Domain controller: name or IP (the Manager connects to it)."}
+              domain: {type: str, required: true, description: "AD domain, e.g. corp.example.com."}
+              ldaps:
+                type: bool
+                description: >-
+                  LDAPS (port 636). Default true. The Manager must trust the domain controller's certificate.
+              bind_user:
+                type: str
+                required: true
+                description: >-
+                  Account name (sAMAccountName) the Manager searches the directory with, e.g. svc-vme-ldap; the Manager
+                  logs in as <bind_user>@<domain>. A plain domain user is enough (read-only).
+              bind_password: {type: str, required: true, no_log: true, description: Password of bind_user.}
+              required_group:
+                type: str
+                required: true
+                description: >-
+                  Only members of this AD group can log in; admins too. It must exist (the Manager checks). Not a
+                  primary group such as Domain Users (AD does not list it as a membership).
+              nested_groups: {type: bool, description: "Count membership through nested groups (Include Member Groups). Default true."}
+              default_role:
+                type: str
+                description: >-
+                  Role every user of the source gets; the roles of matching role_mappings groups add to it.
+                  Must not be an admin role. Default: the Manager's non-admin user role (User Admin on VME 9.0).
+              role_mappings:
+                type: dict
+                description: >-
+                  Manager role name -> list of AD group names, e.g. {System Admin: [VME-Admins]}. Replaces the source's
+                  mappings (the set in the site is the whole set). Default none.
           datastore:
             type: str
             description: >-

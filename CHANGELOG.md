@@ -30,6 +30,15 @@ empty one).
   restarts the Manager's UI service, as the Manager uses SMTP settings set
   through its API only after a restart (`smtp.restart_webui_on_update`,
   default true; several minutes without UI and API).
+- `vme_manager.identity_sources`: Active Directory logins for the Manager's
+  master tenant (server, domain, LDAPS by default, bind account, a required
+  group, nested groups, a non-admin default role, AD group to role mappings).
+  Created when missing, updated when a setting differs; the bind password is
+  compared through a fingerprint in Cypher (`-e identity_password_update=true`
+  sends it anyway). Preflight checks the server names resolve; LDAPS to an IP
+  is refused (the Manager checks the certificate's name). Set only when the
+  license includes identity sources; the report says where to find them in
+  the UI (a license without tenants, such as VME's, hides the Tenants menu).
 
 ## [0.1.9] - 2026-10-13
 

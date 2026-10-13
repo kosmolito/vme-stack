@@ -28,6 +28,10 @@
       {%- if 'password' in (vme_manager | default({})).smtp | default({}) and not vme_manager.smtp.password | default('', true) | string -%}
       {{-   out.append('vme_manager.smtp.password') -}}
       {%- endif -%}
+      {%- for s in (vme_manager | default({})).identity_sources | default([])
+            if 'bind_password' in s and not s.bind_password | default('', true) | string -%}
+      {{-   out.append('vme_manager.identity_sources ' ~ s.name | default('?') ~ ': bind_password') -}}
+      {%- endfor -%}
       {%- for c in vme_clouds | default([]) if c.vcenter is defined -%}
       {%-   for k in ['username', 'password'] if k in c.vcenter and not c.vcenter[k] | default('', true) | string -%}
       {{-     out.append('vme_clouds ' ~ c.name ~ ': vcenter.' ~ k) -}}
@@ -130,7 +134,8 @@
                                  'port': vme_manager.smtp.port | default(25), 'tls': vme_manager.smtp.tls | default(false),
                                  'ssl': vme_manager.smtp.ssl | default(false), 'has_user': 'user' in vme_manager.smtp,
                                  'has_password': 'password' in vme_manager.smtp}
-                                if vme_manager.smtp is defined and vme_manager.smtp is mapping else {})} -%}
+                                if vme_manager.smtp is defined and vme_manager.smtp is mapping else {}),
+                       'identity_sources': vme_manager.identity_sources | default([]) | vme_identity_sources} -%}
       {%- endif -%}
       {%- set clouds = [] -%}
       {%- for c in vme_clouds | default([]) -%}

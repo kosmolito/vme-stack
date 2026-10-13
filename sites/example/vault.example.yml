@@ -14,6 +14,8 @@ vault_vme_admin: "<Manager admin password>"
 # vault_vme_license: "<VME license key>"
 # SMTP login of the Manager (vme_manager.smtp.password)
 vault_vme_smtp: "<SMTP password>"
+# AD bind account of the Manager's identity source (vme_manager.identity_sources[].bind_password)
+vault_vme_ad_bind: "<AD bind password>"
 
 # Only if the site sets the Manager's key pair itself (vme_manager.ssh_private_key /
 # ssh_public_key) instead of a key file: ssh-keygen -t ed25519 -N '' -C vme-manager -f mgr

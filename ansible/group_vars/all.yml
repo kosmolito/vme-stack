@@ -70,6 +70,7 @@ manager: >-
                 'tls': vme_manager.smtp.tls | default(false) | bool, 'ssl': vme_manager.smtp.ssl | default(false) | bool,
                 'user': vme_manager.smtp.user | default(''),
                 'restart_webui_on_update': vme_manager.smtp.restart_webui_on_update | default(true) | bool} if vme_manager.smtp is defined else {}),
+      'identity_sources': vme_manager.identity_sources | default([]) | vme_identity_sources,
       'netmask': mask | join('.'), 'gateway': network.gateway, 'dns': network.dns,
       'compute_vlans': network.compute_vlans | default([]), 'vme_iso': deploy_media.vme_iso_path | default('')} }}
   {%- else -%}{{ {} }}{%- endif -%}

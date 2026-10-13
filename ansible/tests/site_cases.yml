@@ -233,6 +233,86 @@ cases:
   - name: SMTP without host
     patch: {all: {vars: {vme_manager: {smtp: {port: 25}}}}}
     expect: host
+  - name: identity source with LDAPS to an IP
+    patch:
+      all:
+        vars:
+          vme_manager:
+            identity_sources:
+              - name: ad
+                server: 10.0.0.10
+                domain: example.com
+                bind_user: svc-vme-ldap
+                bind_password: x
+                required_group: VME-Users
+    expect: is an IP; with ldaps the Manager checks
+  - name: identity source bind_user as a UPN
+    patch:
+      all:
+        vars:
+          vme_manager:
+            identity_sources:
+              - name: ad
+                server: dc01.example.com
+                domain: example.com
+                bind_user: svc-vme-ldap@example.com
+                bind_password: x
+                required_group: VME-Users
+    expect: is not an account name like svc-vme-ldap
+  - name: identity source without required_group
+    patch:
+      all:
+        vars:
+          vme_manager:
+            identity_sources:
+              - name: ad
+                server: dc01.example.com
+                domain: example.com
+                bind_user: svc-vme-ldap
+                bind_password: x
+    expect: required_group
+  - name: identity source with an admin default role
+    patch:
+      all:
+        vars:
+          vme_manager:
+            identity_sources:
+              - name: ad
+                server: dc01.example.com
+                domain: example.com
+                bind_user: svc-vme-ldap
+                bind_password: x
+                required_group: VME-Users
+                default_role: System Admin
+    expect: default_role must not be an admin role
+  - name: identity source with an unknown type
+    patch:
+      all:
+        vars:
+          vme_manager:
+            identity_sources:
+              - name: ad
+                server: dc01.example.com
+                domain: example.com
+                bind_user: svc-vme-ldap
+                bind_password: x
+                required_group: VME-Users
+                type: okta
+    expect: active_directory
+  - name: identity source role mapping without groups
+    patch:
+      all:
+        vars:
+          vme_manager:
+            identity_sources:
+              - name: ad
+                server: dc01.example.com
+                domain: example.com
+                bind_user: svc-vme-ldap
+                bind_password: x
+                required_group: VME-Users
+                role_mappings: {System Admin: []}
+    expect: needs a list of AD group names
   - name: Manager without the VME ISO
     patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {vme_iso_path: null}}}}}}}
     expect: "vme_manager needs the deploy server's media.vme_iso_path"
