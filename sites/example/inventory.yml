@@ -49,6 +49,15 @@ all:
       tenant: Example                 # default: site; master tenant name
       email: vmeadmin@example.com     # default <admin_user>@<network.domain>
       # license_key: "{{ vault_vme_license }}"   # secret; omit for the trial
+      smtp:                           # outgoing mail; omit to keep the Manager's own settings
+        host: smtp.example.com
+        port: 587                     # default 25
+        from: vme@example.com         # default <admin_user>@<network.domain>
+        tls: true                     # STARTTLS; default false (ssl: true = TLS from the start, port 465)
+        user: vme-relay               # omit both user and password for no login
+        password: "{{ vault_vme_smtp }}"   # secret
+        restart_webui_on_update: true # default: restart morpheus-ui after a change (several minutes
+                                      # without UI/API); the Manager uses API-set SMTP settings only after it
       datastore: nfs-prod             # move the Manager's disk to this datastore of its host's cluster
       autostart: false                # default (hpe-vm's); true: libvirt starts the VM with its host
       # The Manager's key pair to every cluster's hosts (stored in the Manager): a private key

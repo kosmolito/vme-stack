@@ -177,3 +177,154 @@
     lic: "{{ vme_license_now.license | default({}) }}"
     days: "{{ (((lic.endDate | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - now(utc=true)).total_seconds() / 86400) | round | int }}"
   when: lic.endDate | default('', true) | length > 0 and days | int <= 30
+
+# Outgoing mail (vme_manager.smtp): the appliance settings' SMTP fields (PUT
+# /api/appliance-settings; same fields in API 9.0.2 and 9.1.0). Set when a field differs
+# from the site; without smtp in the site the Manager's own settings stay.
+# The Manager shows the password only masked (and as a salted hash of its own), so the
+# run keeps a fingerprint of the password it set (salted SHA-256) in the Manager's
+# Cypher store and sends the password again when the site's password no longer matches
+# it. -e smtp_password_update=true sends it anyway (e.g. after a change in the UI).
+- name: Set the Manager's SMTP settings
+  when: manager.smtp | length > 0
+  vars:
+    smtp_want:
+      smtpServer: "{{ manager.smtp.host }}"
+      smtpPort: "{{ manager.smtp.port }}"
+      smtpMailFrom: "{{ manager.smtp['from'] }}"
+      smtpTLS: "{{ manager.smtp.tls }}"
+      smtpSSL: "{{ manager.smtp.ssl }}"
+      smtpUser: "{{ manager.smtp.user }}"
+    smtp_password: "{{ vme_manager.smtp.password | default('') }}"
+    smtp_cypher_url: "https://{{ manager.ip }}/api/cypher/secret/vme-stack/smtp-password"
+  block:
+    - name: Read the appliance settings
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/appliance-settings"
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ vme_login.json.access_token }}"
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vme_appliance
+      no_log: true
+
+    - name: Read the fingerprint of the SMTP password set last
+      ansible.builtin.uri:
+        url: "{{ smtp_cypher_url }}"
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ vme_login.json.access_token }}"
+        status_code: [200, 404]
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vme_smtp_record
+      when: smtp_password | length > 0
+      no_log: true
+
+    # Fields that differ (the Manager keeps an empty user as null), and the password.
+    - name: Compare the SMTP settings with the site
+      ansible.builtin.set_fact:
+        smtp_diff: >-
+          {%- set out = [] -%}
+          {%- for k, v in smtp_want.items() if (have[k] | default('', true) | string) != (v | default('', true) | string) -%}
+          {{-   out.append(k) -}}
+          {%- endfor -%}
+          {%- if smtp_password | length > 0 and (smtp_password_update | default(false) | bool
+                or (record.salt | default('') ~ smtp_password) | hash('sha256') != record.fingerprint | default('')) -%}
+          {{-   out.append('smtpPassword') -}}
+          {%- endif -%}
+          {{ out }}
+      vars:
+        have: "{{ vme_appliance.json.applianceSettings }}"
+        record: >-
+          {{ vme_smtp_record.json.data | default({}) if vme_smtp_record is not skipped and vme_smtp_record.status == 200 else {} }}
+      no_log: true
+
+    - name: "Set the SMTP settings: {{ smtp_diff | join(', ') | default('none', true) }}"
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/appliance-settings"
+        method: PUT
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ vme_login.json.access_token }}"
+        body_format: json
+        body:
+          applianceSettings: >-
+            {{ smtp_want | combine({'smtpUser': manager.smtp.user | default(none, true)})
+               | combine({'smtpPassword': smtp_password} if smtp_password | length > 0 else {}) }}
+        status_code: [200, 400]
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vme_smtp_set
+      when: smtp_diff | length > 0
+      changed_when: true
+      no_log: true
+
+    - name: Check the SMTP settings were accepted
+      ansible.builtin.assert:
+        that: vme_smtp_set.json.success | default(false)
+        fail_msg: >-
+          The Manager refused the SMTP settings: HTTP {{ vme_smtp_set.status | default('?') }}
+          {{ vme_smtp_set.json.msg | default('') }} {{ vme_smtp_set.json.errors | default({}) }}
+        quiet: true
+      when: vme_smtp_set is not skipped
+
+    # set_fact fixes the value: a lookup in vars runs again at each use (salt and
+    # fingerprint would get different salts).
+    - name: Make a salt for the SMTP password fingerprint
+      ansible.builtin.set_fact:
+        smtp_salt: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['hexdigits']) }}"
+      when: vme_smtp_set is not skipped and smtp_password | length > 0
+      no_log: true
+
+    - name: Store the fingerprint of the SMTP password
+      ansible.builtin.uri:
+        url: "{{ smtp_cypher_url }}?ttl=0"
+        method: POST
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ vme_login.json.access_token }}"
+        body_format: json
+        body:
+          salt: "{{ smtp_salt }}"
+          fingerprint: "{{ (smtp_salt ~ smtp_password) | hash('sha256') }}"
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      when: vme_smtp_set is not skipped and smtp_password | length > 0
+      changed_when: true
+      no_log: true
+
+    # The Manager hands SMTP settings to its mail sender at startup only (seen on 9.0.2:
+    # settings set through the API were still unused 20 minutes later; after a restart of
+    # morpheus-ui mail went out). Restart through the VM's guest agent, then wait for it.
+    - name: Restart the Manager's UI service so it uses the new SMTP settings
+      ansible.builtin.script:
+        cmd: "manager_exec.py {{ manager.hostname | quote }} /opt/morpheus/bin/morpheus-ctl restart morpheus-ui"
+        executable: python3
+      become: true
+      register: vme_ui_restart
+      when: vme_smtp_set is not skipped and manager.smtp.restart_webui_on_update
+      changed_when: true
+      failed_when: (vme_ui_restart.stdout | from_json).rc != 0
+
+    - name: "Wait for the Manager to answer /ping again: {{ manager.ip }}"
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/ping"
+        validate_certs: false
+        timeout: 10
+      delegate_to: "{{ probe_from }}"
+      register: vme_ping_restart
+      until: vme_ping_restart.status | default(0) == 200
+      retries: 90
+      delay: 20
+      when: vme_ui_restart is not skipped
+
+    - name: Report the SMTP settings
+      ansible.builtin.debug:
+        msg: >-
+          SMTP: {{ manager.smtp.host }}:{{ manager.smtp.port }} from {{ manager.smtp['from'] }}
+          ({{ 'STARTTLS' if manager.smtp.tls else 'TLS' if manager.smtp.ssl else 'no TLS' }},
+          {{ 'login ' ~ manager.smtp.user if manager.smtp.user else 'no login' }}){{ ', set now' if vme_smtp_set is not skipped else '' }}{{
+          ' (morpheus-ui restarted)' if vme_ui_restart is not skipped else
+          '; they apply at the next restart of morpheus-ui (smtp.restart_webui_on_update: false)' if vme_smtp_set is not skipped else '' }}

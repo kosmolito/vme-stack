@@ -140,6 +140,18 @@ def _format_errors(site):
             errs.append(f"vme_manager.email '{mgr['email']}' is not an email address")
         if mgr.get("ssh_public_key") and not SSH_KEY.match(mgr["ssh_public_key"]):
             errs.append("vme_manager.ssh_public_key is not an OpenSSH public key line")
+        smtp = mgr.get("smtp") or {}
+        if smtp:
+            if not re.match(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$", str(smtp["host"])):
+                errs.append(f"vme_manager.smtp.host '{smtp['host']}' is not a host name or IP")
+            if not 1 <= int(smtp["port"]) <= 65535:
+                errs.append(f"vme_manager.smtp.port {smtp['port']} is not a port (1-65535)")
+            if smtp.get("from") and not re.match(r"^[^@\s]+@[^@\s]+$", smtp["from"]):
+                errs.append(f"vme_manager.smtp.from '{smtp['from']}' is not an email address")
+            if smtp.get("tls") and smtp.get("ssl"):
+                errs.append("vme_manager.smtp: tls (STARTTLS) and ssl (TLS from the start) exclude each other")
+            if smtp.get("has_user") != smtp.get("has_password"):
+                errs.append("vme_manager.smtp.user and password go together (or neither: no login)")
     for c in site.get("vme_clouds", []):
         url = (c.get("vcenter") or {}).get("url")
         if url and not re.match(r"^https://[^\s/]+(/\S*)?$", url):

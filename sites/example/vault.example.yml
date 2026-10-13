@@ -12,6 +12,8 @@ vault_idrac: { username: "<iDRAC user>", password: "<iDRAC password>" }
 vault_vme_admin: "<Manager admin password>"
 # License key (vme_manager.license_key); without it the Manager starts a trial
 # vault_vme_license: "<VME license key>"
+# SMTP login of the Manager (vme_manager.smtp.password)
+vault_vme_smtp: "<SMTP password>"
 
 # Only if the site sets the Manager's key pair itself (vme_manager.ssh_private_key /
 # ssh_public_key) instead of a key file: ssh-keygen -t ed25519 -N '' -C vme-manager -f mgr

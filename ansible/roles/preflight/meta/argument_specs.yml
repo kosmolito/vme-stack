@@ -65,6 +65,25 @@ argument_specs:
             description: >-
               VME license key. Default: none, the Manager starts a trial. Installed at setup,
               or on a later run when the Manager does not have it yet.
+          smtp:
+            description: >-
+              Outgoing mail of the Manager (its SMTP settings), set on every run. Leave out to keep
+              the Manager's own settings.
+            type: dict
+            options:
+              host: {type: str, required: true, description: SMTP server (name or IP) the Manager sends mail through.}
+              port: {type: int, description: SMTP port. Default 25.}
+              from: {type: str, description: "Sender address. Default <admin_user>@<network.domain>."}
+              tls: {type: bool, description: "STARTTLS after connecting (usually port 587). Default false."}
+              ssl: {type: bool, description: "TLS from the start (usually port 465). Default false. Not together with tls."}
+              user: {type: str, description: "SMTP login. Default: none (no login)."}
+              password: {type: str, no_log: true, description: Password of user.}
+              restart_webui_on_update:
+                type: bool
+                description: >-
+                  Restart the Manager's UI service (morpheus-ui, several minutes without UI and API) after a run
+                  changed the SMTP settings: the Manager uses settings set through its API only after a restart.
+                  Default true. false: they apply at the next restart of morpheus-ui.
           datastore:
             type: str
             description: >-

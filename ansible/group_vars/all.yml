@@ -65,6 +65,11 @@ manager: >-
       'email': vme_manager.email | default(admin ~ '@' ~ network.domain),
       'datastore': vme_manager.datastore | default(''),
       'autostart': vme_manager.autostart | default(false),
+      'smtp': ({'host': vme_manager.smtp.host, 'port': vme_manager.smtp.port | default(25) | int,
+                'from': vme_manager.smtp['from'] | default(admin ~ '@' ~ network.domain),
+                'tls': vme_manager.smtp.tls | default(false) | bool, 'ssl': vme_manager.smtp.ssl | default(false) | bool,
+                'user': vme_manager.smtp.user | default(''),
+                'restart_webui_on_update': vme_manager.smtp.restart_webui_on_update | default(true) | bool} if vme_manager.smtp is defined else {}),
       'netmask': mask | join('.'), 'gateway': network.gateway, 'dns': network.dns,
       'compute_vlans': network.compute_vlans | default([]), 'vme_iso': deploy_media.vme_iso_path | default('')} }}
   {%- else -%}{{ {} }}{%- endif -%}

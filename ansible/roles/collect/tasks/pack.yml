@@ -39,6 +39,7 @@
       {%- for k in ['admin_password', 'license_key', 'ssh_private_key', 'ssh_public_key'] -%}
       {{-   out.append((vme_manager | default({}))[k] | default('', true) | string) -}}
       {%- endfor -%}
+      {{- out.append(((vme_manager | default({})).smtp | default({})).password | default('', true) | string) -}}
       {%- for c in vme_clouds | default([]) if c.vcenter is defined -%}
       {%-   for k in ['username', 'password'] -%}{{ out.append(c.vcenter[k] | default('', true) | string) }}{%- endfor -%}
       {%- endfor -%}

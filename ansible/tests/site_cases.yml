@@ -221,6 +221,18 @@ cases:
   - name: Manager IP already used by a host
     patch: {all: {vars: {vme_manager: {ip: 10.0.0.22}}}}
     expect: vme_manager.ip 10.0.0.22 is already used
+  - name: SMTP with tls and ssl
+    patch: {all: {vars: {vme_manager: {smtp: {host: smtp.example.com, tls: true, ssl: true}}}}}
+    expect: tls (STARTTLS) and ssl (TLS from the start) exclude each other
+  - name: SMTP user without password
+    patch: {all: {vars: {vme_manager: {smtp: {host: smtp.example.com, user: relay}}}}}
+    expect: vme_manager.smtp.user and password go together
+  - name: SMTP from not an address
+    patch: {all: {vars: {vme_manager: {smtp: {host: smtp.example.com, from: nobody}}}}}
+    expect: "vme_manager.smtp.from 'nobody' is not an email address"
+  - name: SMTP without host
+    patch: {all: {vars: {vme_manager: {smtp: {port: 25}}}}}
+    expect: host
   - name: Manager without the VME ISO
     patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {vme_iso_path: null}}}}}}}
     expect: "vme_manager needs the deploy server's media.vme_iso_path"

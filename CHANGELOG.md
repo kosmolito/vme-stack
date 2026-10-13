@@ -23,6 +23,13 @@ empty one).
 - `vme_manager.license_key` set after the first setup is installed on the next
   run (the Manager checks the key first; one it already has is skipped).
 - A warning when the Manager's license ends within 30 days or has ended.
+- `vme_manager.smtp`: the Manager's outgoing mail (host, port, from, tls or
+  ssl, user and password). Set when it differs from the site; the password is
+  compared through a fingerprint the run keeps in the Manager's Cypher store
+  (`-e smtp_password_update=true` sends it anyway). After a change the run
+  restarts the Manager's UI service, as the Manager uses SMTP settings set
+  through its API only after a restart (`smtp.restart_webui_on_update`,
+  default true; several minutes without UI and API).
 
 ## [0.1.9] - 2026-10-13
 

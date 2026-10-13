@@ -46,6 +46,15 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_manager.tenant` | str |  | Name of the Manager's master tenant. Default the site name. |
 | `vme_manager.email` | str |  | Email of the first admin. Default &lt;admin_user&gt;@&lt;network.domain&gt;. |
 | `vme_manager.license_key` | str |  | *Secret.* VME license key. Default: none, the Manager starts a trial. Installed at setup, or on a later run when the Manager does not have it yet. |
+| `vme_manager.smtp` | dict |  | Outgoing mail of the Manager (its SMTP settings), set on every run. Leave out to keep the Manager's own settings. |
+| `vme_manager.smtp.host` | str | yes | SMTP server (name or IP) the Manager sends mail through. |
+| `vme_manager.smtp.port` | int |  | SMTP port. Default 25. |
+| `vme_manager.smtp.from` | str |  | Sender address. Default &lt;admin_user&gt;@&lt;network.domain&gt;. |
+| `vme_manager.smtp.tls` | bool |  | STARTTLS after connecting (usually port 587). Default false. |
+| `vme_manager.smtp.ssl` | bool |  | TLS from the start (usually port 465). Default false. Not together with tls. |
+| `vme_manager.smtp.user` | str |  | SMTP login. Default: none (no login). |
+| `vme_manager.smtp.password` | str |  | *Secret.* Password of user. |
+| `vme_manager.smtp.restart_webui_on_update` | bool |  | Restart the Manager's UI service (morpheus-ui, several minutes without UI and API) after a run changed the SMTP settings: the Manager uses settings set through its API only after a restart. Default true. false: they apply at the next restart of morpheus-ui. |
 | `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists. Default: stays local. |
 | `vme_manager.autostart` | bool |  | Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it. |
 | `vme_manager.ssh_private_key_file` | str |  | The Manager's key pair to every cluster's hosts as files: this and &lt;file&gt;.pub. It is stored in the Manager. Default: the Manager host's login key (its ansible_ssh_private_key_file, else ~/.ssh/id_ed25519). |

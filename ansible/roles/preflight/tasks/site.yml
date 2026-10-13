@@ -25,6 +25,9 @@
             if k in vme_manager | default({}) and not vme_manager[k] | default('', true) | string -%}
       {{-   out.append('vme_manager.' ~ k) -}}
       {%- endfor -%}
+      {%- if 'password' in (vme_manager | default({})).smtp | default({}) and not vme_manager.smtp.password | default('', true) | string -%}
+      {{-   out.append('vme_manager.smtp.password') -}}
+      {%- endif -%}
       {%- for c in vme_clouds | default([]) if c.vcenter is defined -%}
       {%-   for k in ['username', 'password'] if k in c.vcenter and not c.vcenter[k] | default('', true) | string -%}
       {{-     out.append('vme_clouds ' ~ c.name ~ ': vcenter.' ~ k) -}}
@@ -122,7 +125,12 @@
                        'email': vme_manager.email | default(''), 'datastore': vme_manager.datastore | default(''),
                        'has_private_key': 'ssh_private_key' in vme_manager,
                        'has_public_key': 'ssh_public_key' in vme_manager,
-                       'ssh_public_key': vme_manager.ssh_public_key | default('')} -%}
+                       'ssh_public_key': vme_manager.ssh_public_key | default(''),
+                       'smtp': ({'host': vme_manager.smtp.host | default(''), 'from': vme_manager.smtp['from'] | default(''),
+                                 'port': vme_manager.smtp.port | default(25), 'tls': vme_manager.smtp.tls | default(false),
+                                 'ssl': vme_manager.smtp.ssl | default(false), 'has_user': 'user' in vme_manager.smtp,
+                                 'has_password': 'password' in vme_manager.smtp}
+                                if vme_manager.smtp is defined and vme_manager.smtp is mapping else {})} -%}
       {%- endif -%}
       {%- set clouds = [] -%}
       {%- for c in vme_clouds | default([]) -%}
