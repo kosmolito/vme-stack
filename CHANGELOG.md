@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-13
+
 ### Added
 
 - Preflight checks the reverse DNS (PTR) of the Manager's and the HVM hosts'
