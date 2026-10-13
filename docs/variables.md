@@ -105,6 +105,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_clusters[].datastores[].path` | str | yes | Exported path on the NFS server (absolute). |
 | `vme_clusters[].datastores[].version` | str: `3`, `4` |  | NFS version. Default: the Manager's. |
 | `vme_clusters[].datastores[].default` | bool |  | The cluster's default datastore (image target); at most one. Default false. |
+| `vme_clusters[].local_datastore` | str: `active`, `inactive` |  | The cluster's local datastore (each host's local disk, 'local' in the Manager): inactive hides it from provisioning (new VMs only on shared storage; existing VMs keep running), active offers it again. Needs datastores. Not set: left as it is (an admin switches it in the Manager UI). |
 | `wait_ssh_timeout` | int |  | Seconds to wait for a host to finish its install. Default 2700 (45 min). |
 | `force_reinstall` | bool |  | Reinstall hosts that are installed already. Only with --limit. Usually -e force_reinstall=true for one run. |
 | `keep_host_iso` | bool |  | Keep each host's ISO on the deploy server after its install. Default false (removed). |

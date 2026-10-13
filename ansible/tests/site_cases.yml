@@ -433,6 +433,12 @@ cases:
                 - {name: nfs01, type: nfs, host: 10.0.0.6, path: /a, default: true}
                 - {name: nfs02, type: nfs, host: 10.0.0.6, path: /b, default: true}
     expect: only one datastore can be the default
+  - name: local datastore inactive without shared datastores
+    patch: {all: {vars: {vme_clusters: [{name: c1, cloud: sto-hvm, hosts: [hvm01], local_datastore: inactive}], vme_manager: {datastore: null}}}}
+    expect: "vme_clusters 'c1': local_datastore inactive needs datastores"
+  - name: local datastore with an unknown value
+    patch: {all: {vars: {vme_clusters: [{name: c1, cloud: sto-hvm, hosts: [hvm01], local_datastore: offline}], vme_manager: {datastore: null}}}}
+    expect: local_datastore
   # --- groups, clouds, clusters ---
   - name: cloud in an unknown group
     patch: {all: {vars: {vme_clouds: [{name: sto-hvm, type: hvm, groups: [sto, malmo]}]}}}

@@ -218,6 +218,13 @@ argument_specs:
               path: {type: str, required: true, description: Exported path on the NFS server (absolute).}
               version: {type: str, choices: ["3", "4"], description: "NFS version. Default: the Manager's."}
               default: {type: bool, description: "The cluster's default datastore (image target); at most one. Default false."}
+          local_datastore:
+            type: str
+            choices: [active, inactive]
+            description: >-
+              The cluster's local datastore (each host's local disk, 'local' in the Manager): inactive hides it from
+              provisioning (new VMs only on shared storage; existing VMs keep running), active offers it again. Needs
+              datastores. Not set: left as it is (an admin switches it in the Manager UI).
       wait_ssh_timeout: {type: int, description: "Seconds to wait for a host to finish its install. Default 2700 (45 min)."}
       force_reinstall: {type: bool, description: "Reinstall hosts that are installed already. Only with --limit. Usually -e force_reinstall=true for one run."}
       keep_host_iso: {type: bool, description: "Keep each host's ISO on the deploy server after its install. Default false (removed)."}

@@ -11,6 +11,14 @@ empty one).
 
 ## [Unreleased]
 
+### Added
+
+- `vme_clusters[].local_datastore: inactive | active`: the cluster's local
+  datastore (each host's local disk) taken out of provisioning, so new VMs go
+  on the shared datastores only (VMs already on it keep running), or offered
+  again. Needs `datastores` for `inactive`. Not set: left as it is, for an
+  admin to switch in the Manager UI.
+
 ## [0.1.11] - 2026-10-13
 
 ### Added

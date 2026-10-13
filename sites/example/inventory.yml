@@ -121,6 +121,8 @@ all:
             path: /export/vme-prod
             version: "4"              # "3" or "4"; default the Manager's
             default: true             # default false; the store for VM disks and images
+        local_datastore: inactive     # active | inactive; inactive: new VMs only on the shared datastores
+                                      # (existing ones keep running); not set: left as it is (Manager UI)
       - name: dev
         cloud: example-hvm
         group: development

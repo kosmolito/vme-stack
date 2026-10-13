@@ -116,6 +116,7 @@ manager_clusters: >-
                     'group': c.group | default((cloud.groups | default([''])) | first),
                     'hosts': c.hosts, 'layout': c.layout | default(''),
                     'compute_vlans': network.compute_vlans | default([]),
-                    'datastores': c.datastores | default([])}) -}}
+                    'datastores': c.datastores | default([]),
+                    'local_datastore': c.local_datastore | default('')}) -}}
   {%- endfor -%}
   {{ out }}

@@ -434,6 +434,8 @@ def vme_site_errors(site, roles_dir):
             errs.append(f"{label}: datastore name '{n}' is used more than once")
         if sum(1 for d in ds if d.get("default")) > 1:
             errs.append(f"{label}: only one datastore can be the default (image target)")
+        if cl.get("local_datastore") == "inactive" and not ds:
+            errs.append(f"{label}: local_datastore inactive needs datastores (VMs would have no storage)")
         if any(h["compute_interface"] for h in present) and not net.get("compute_vlans"):
             errs.append(f"{label}: network.compute_vlans is required when the hosts have a compute interface")
     if mgr and mgr.get("has_private_key") != mgr.get("has_public_key"):

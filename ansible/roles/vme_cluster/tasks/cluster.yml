@@ -162,6 +162,52 @@
              | map('join', ': online=') | list }}"
   when: cl.datastores | length > 0
 
+# --- the local datastore (local_datastore) -------------------------------------
+# One 'local' per cluster (externalId local, /var/morpheus/kvm/local on each host).
+# Inactive (PUT .../datastores/<id> {active}, the same in API 9.0.2 and 9.1.0): not
+# offered when provisioning; VMs already on it keep running. Not set: left alone.
+
+- name: Set the local datastore {{ cl.local_datastore | default('-', true) }}
+  when: cl.local_datastore | default('', true) | length > 0
+  block:
+    - name: Read the local datastore
+      ansible.builtin.uri:
+        url: "{{ vme_api }}/clusters/{{ vme_cluster_id }}/datastores?max=100"
+        validate_certs: false
+        headers: "{{ vme_headers }}"
+      delegate_to: "{{ probe_from }}"
+      register: ds_local_find
+      failed_when: ds_local_find.json.datastores | selectattr('externalId', 'equalto', 'local') | list | length != 1
+
+    - name: Set the local datastore active or inactive
+      ansible.builtin.uri:
+        url: "{{ vme_api }}/clusters/{{ vme_cluster_id }}/datastores/{{ ds_local.id }}"
+        method: PUT
+        validate_certs: false
+        headers: "{{ vme_headers }}"
+        body_format: json
+        body: {datastore: {active: "{{ cl.local_datastore == 'active' }}"}}
+      delegate_to: "{{ probe_from }}"
+      when: ds_local.active != (cl.local_datastore == 'active')
+      register: ds_local_set
+      changed_when: true
+      vars:
+        ds_local: "{{ ds_local_find.json.datastores | selectattr('externalId', 'equalto', 'local') | first }}"
+
+    - name: Report the local datastore
+      ansible.builtin.debug:
+        msg: "{{ [state] + ([mgr_note] if mgr_on_local else []) }}"
+      vars:
+        ds_local: "{{ ds_local_find.json.datastores | selectattr('externalId', 'equalto', 'local') | first }}"
+        state: >-
+          Local datastore '{{ ds_local.name }}' of cluster {{ cl.name }}: {{ cl.local_datastore }}
+          ({{ 'set now' if ds_local_set is changed else 'already' }})
+        mgr_on_local: >-
+          {{ cl.local_datastore == 'inactive' and manager.host in cl.hosts
+             and manager.datastore | default('', true) | length == 0 }}
+        mgr_note: >-
+          The Manager VM's disk stays on it (it keeps running); vme_manager.datastore moves it to shared storage.
+
 # For manager_vm.yml: the group and datastores of the Manager host's cluster.
 - name: Remember the Manager's cluster
   ansible.builtin.set_fact:

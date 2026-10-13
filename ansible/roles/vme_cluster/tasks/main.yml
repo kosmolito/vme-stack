@@ -2,7 +2,8 @@
 # Stage 7: the site's Manager objects through the Manager API (the Terraform
 # provider has no HVM cluster resource): groups, clouds (HVM private clouds and
 # vCenter integrations) and HVM clusters, each found by name or created; never
-# changed or deleted once there. The Manager then SSHes into each cluster's
+# changed or deleted once there (except a cluster's local datastore, set active or
+# inactive by local_datastore). The Manager then SSHes into each cluster's
 # hosts (with its own key pair) and sets them up.
 # API calls go from probe_from (the deploy server reaches the Manager).
 - name: Set API facts
