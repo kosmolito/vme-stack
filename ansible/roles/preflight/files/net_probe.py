@@ -3,6 +3,7 @@
 
 usage: net_probe.py --domain example.com --dns 10.0.0.10,10.0.0.11 --ntp 10.0.0.10
                     [--resolve vme.example.com,ntp1.example.com]   (A records, per name and DNS server)
+                    [--ptr 10.0.0.20,10.0.0.21]                     (PTR records, per address and DNS server)
 Standard library only, so it runs on any jump host or controller with python3.
 """
 
@@ -85,6 +86,58 @@ def dns_resolve(server, name, timeout=3):
         s.close()
 
 
+def _read_name(data, i):
+    """A (possibly compressed) name in a DNS message, as text."""
+    labels, hops = [], 0
+    while True:
+        n = data[i]
+        if n == 0:
+            return ".".join(labels)
+        if n & 0xC0 == 0xC0:
+            hops += 1
+            if hops > 20:
+                raise IndexError("name compression loop")
+            i = ((n & 0x3F) << 8) | data[i + 1]
+            continue
+        labels.append(data[i + 1 : i + 1 + n].decode("ascii", "replace"))
+        i += n + 1
+
+
+def dns_ptr(server, ip, timeout=3):
+    """PTR names of an IPv4 address from this server (none: no reverse record)."""
+    qid = int.from_bytes(os.urandom(2), "big")
+    rev = ".".join(reversed(ip.split("."))) + ".in-addr.arpa"
+    qname = b"".join(bytes([len(p)]) + p.encode() for p in rev.split(".")) + b"\0"
+    pkt = struct.pack("!HHHHHH", qid, 0x0100, 1, 0, 0, 0) + qname + struct.pack("!HH", 12, 1)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(timeout)
+    try:
+        s.sendto(pkt, (server, 53))
+        data, _ = s.recvfrom(4096)
+        rid, flags, qdcount, ancount = struct.unpack("!HHHH", data[:8])
+        if rid != qid:
+            return {"ok": False, "error": "reply id mismatch"}
+        rcode = flags & 0xF
+        if rcode not in (0, 3):
+            return {"ok": False, "error": f"rcode {rcode}"}
+        i = 12
+        for _ in range(qdcount):
+            i = _skip_name(data, i) + 4
+        names = []
+        for _ in range(ancount):
+            i = _skip_name(data, i)
+            rtype, _, _, rdlen = struct.unpack("!HHIH", data[i : i + 10])
+            i += 10
+            if rtype == 12:
+                names.append(_read_name(data, i))
+            i += rdlen
+        return {"ok": True, "rcode": rcode, "names": names}
+    except (OSError, struct.error, IndexError) as e:
+        return {"ok": False, "error": str(e) or type(e).__name__}
+    finally:
+        s.close()
+
+
 def ntp_query(server, timeout=3):
     """SNTP client query. root_distance follows systemd-timesyncd (delay/2 + dispersion)."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -120,6 +173,7 @@ def main():
     ap.add_argument("--dns", default="")
     ap.add_argument("--ntp", default="")
     ap.add_argument("--resolve", default="")
+    ap.add_argument("--ptr", default="")
     a = ap.parse_args()
     servers = list(filter(None, a.dns.split(",")))
     print(
@@ -128,6 +182,7 @@ def main():
                 "dns": {s: dns_query(s, a.domain) for s in servers},
                 "ntp": {s: ntp_query(s) for s in filter(None, a.ntp.split(","))},
                 "resolve": {n: {s: dns_resolve(s, n) for s in servers} for n in filter(None, a.resolve.split(","))},
+                "ptr": {ip: {s: dns_ptr(s, ip) for s in servers} for ip in filter(None, a.ptr.split(","))},
             }
         )
     )

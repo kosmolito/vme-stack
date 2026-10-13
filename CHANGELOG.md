@@ -11,6 +11,16 @@ empty one).
 
 ## [Unreleased]
 
+### Added
+
+- Preflight checks the reverse DNS (PTR) of the Manager's and the HVM hosts'
+  addresses. A PTR name that is no valid host name (such as a leftover
+  `*.apps.<domain>` wildcard) on the Manager's IP is an error: the appliance's
+  setup fails on it. Other mismatches are warnings.
+- The Manager install watches the Manager VM's first-boot setup (through its
+  QEMU guest agent) while `hpe-vm` runs, and stops with the VM's error output
+  when `morpheus-ctl reconfigure` failed, instead of waiting 90 minutes.
+
 ## [0.1.9] - 2026-10-13
 
 ### Added

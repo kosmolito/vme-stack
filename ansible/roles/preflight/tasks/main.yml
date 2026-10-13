@@ -189,9 +189,11 @@
       net_probe.py --domain {{ domain | quote }}
       --dns {{ dns | join(',') | quote }} --ntp {{ ntp_servers | join(',') | quote }}
       {{ ('--resolve ' ~ resolve_names | join(',') | quote) if resolve_names | length > 0 else '' }}
+      --ptr {{ ptr_ips | join(',') | quote }}
     executable: python3
   vars:
     resolve_names: "{{ ([manager_dns_name] if manager_dns_name | length > 0 else []) + ntp_dns_names }}"
+    ptr_ips: "{{ (([manager.ip] if manager.ip is defined else []) + ansible_play_hosts_all | map('extract', hostvars, 'ip') | list) | unique }}"
   register: net_probe_raw
   changed_when: false
 
@@ -200,13 +202,44 @@
   ansible.builtin.set_fact:
     net_problems: >-
       {{ ([] if dns_ok | length > 0 else ['no DNS server answers from ' ~ probe_from ~ ': ' ~ dns | join(', ')])
-         + manager_dns_problems }}
+         + manager_dns_problems + ptr_findings.problems }}
     net_warnings: >-
       {{ (probe.dns | dict2items | rejectattr('value.ok') |
            map(attribute='key') | map('regex_replace', '^(.*)$', 'DNS server \1 does not answer') | list) +
-         ntp_warnings + ntp_dns_warnings }}
+         ntp_warnings + ntp_dns_warnings + ptr_findings.warnings }}
   vars:
     probe: "{{ net_probe_raw.stdout | from_json }}"
+    # Reverse DNS: a machine without a DNS name of its own takes its address's PTR
+    # name (hostname -f). The Manager's first-boot setup (morpheus-ctl reconfigure)
+    # fails on a PTR name that is no valid host name (e.g. a wildcard *.apps.<domain>
+    # left from an old ingress), and hpe-vm then waits for nothing. Manager: invalid
+    # name = problem, a valid foreign name = warning; HVM hosts: warnings only.
+    ptr_findings: >-
+      {%- set out = {'problems': [], 'warnings': []} -%}
+      {%- set valid = '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$' -%}
+      {%- set machines = [] -%}
+      {%- if manager.ip is defined -%}
+      {%-   set _ = machines.append({'ip': manager.ip, 'what': 'the Manager', 'name': manager.hostname, 'manager': true}) -%}
+      {%- endif -%}
+      {%- for h in ansible_play_hosts_all -%}
+      {%-   set _ = machines.append({'ip': hostvars[h].ip, 'what': h, 'name': h, 'manager': false}) -%}
+      {%- endfor -%}
+      {%- for m in machines -%}
+      {%-   set names = probe.ptr[m.ip] | default({}) | dict2items | selectattr('value.ok') | map(attribute='value.names')
+                        | flatten | map('lower') | map('regex_replace', '[.]$', '') | unique | list -%}
+      {%-   set bad = names | reject('match', valid) | list -%}
+      {%-   set foreign = names | select('match', valid) | reject('in', [m.name | lower, (m.name ~ '.' ~ domain) | lower]) | list -%}
+      {%-   if bad -%}
+      {%-     set msg = 'reverse DNS of ' ~ m.ip ~ ' (' ~ m.what ~ ') is ' ~ bad | join(', ') ~ ', no valid host name: '
+                        ~ ('the Manager setup (morpheus-ctl reconfigure) fails on it. Delete the PTR record or use another IP.'
+                           if m.manager else 'the host may take it as its name. Delete the PTR record.') -%}
+      {%-     set _ = (out.problems if m.manager else out.warnings).append(msg) -%}
+      {%-   elif foreign -%}
+      {%-     set _ = out.warnings.append('reverse DNS of ' ~ m.ip ~ ' (' ~ m.what ~ ') is ' ~ foreign | join(', ')
+                                          ~ ', not ' ~ m.name ~ '[.' ~ domain ~ ']; the machine takes it as its full name (hostname -f)') -%}
+      {%-   endif -%}
+      {%- endfor -%}
+      {{ out }}
     dns_ok: "{{ probe.dns | dict2items | selectattr('value.ok') | list }}"
     # Servers that do not answer at all are reported (warning) above.
     manager_dns_problems: >-

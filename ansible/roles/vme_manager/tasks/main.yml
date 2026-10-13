@@ -108,16 +108,40 @@
       changed_when: true
       no_log: true
 
-    - name: Wait for hpe-vm to finish
-      ansible.builtin.systemd_service:
-        name: vme-stack-hpe-vm
+    # hpe-vm waits for the Manager's /ping and does not notice when the appliance's
+    # own setup (morpheus-ctl reconfigure in the VM) failed: watch that too, through
+    # the VM's guest agent, and stop early instead of waiting the full 90 minutes.
+    - name: Wait for hpe-vm to finish, watching the Manager VM's first boot
+      ansible.builtin.script:
+        cmd: "manager_firstboot.py vme-stack-hpe-vm {{ manager.hostname | quote }}"
+        executable: python3
       become: true
-      register: hpe_vm_unit
-      until: hpe_vm_unit.status.ActiveState | default('inactive') != 'active'
+      register: hpe_vm_watch
+      until: (hpe_vm_watch.stdout | from_json).done
       retries: 180
       delay: 30
       changed_when: false
-      failed_when: false     # a collected (finished) transient unit no longer exists
+
+    - name: Stop hpe-vm after a failed Manager setup
+      ansible.builtin.systemd_service:
+        name: vme-stack-hpe-vm
+        state: stopped
+      become: true
+      when: (hpe_vm_watch.stdout | from_json).firstboot_failed
+      failed_when: false     # it may have ended on its own meanwhile
+
+    - name: Check the Manager VM's first-boot setup
+      ansible.builtin.assert:
+        that: not watch.firstboot_failed
+        fail_msg: >-
+          {{ ['The Manager VM ' ~ manager.hostname ~ ' on ' ~ inventory_hostname ~ ' failed its first-boot setup'
+              ~ ' (morpheus-ctl reconfigure); from its /var/log/cloud-init-output.log:'] + watch.lines
+             + ['A frequent cause: the reverse DNS name of ' ~ manager.ip ~ ' (preflight checks it).'
+                ~ ' Fix the cause, then remove the VM before the next run: virsh destroy ' ~ manager.hostname
+                ~ '; virsh undefine ' ~ manager.hostname ~ '; rm /var/morpheus/kvm/local/{hpe-vm-essentials-*.qcow2,morpheus-cloud-init.iso}'] }}
+        quiet: true
+      vars:
+        watch: "{{ hpe_vm_watch.stdout | from_json }}"
 
     - name: Read hpe-vm's exit code and output
       ansible.builtin.shell: |
