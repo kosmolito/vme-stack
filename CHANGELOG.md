@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-13
+
 ### Added
 
 - `vme_clusters[].local_datastore: inactive | active`: the cluster's local
