@@ -313,6 +313,67 @@ cases:
                 required_group: VME-Users
                 role_mappings: {System Admin: []}
     expect: needs a list of AD group names
+  - name: task with catalog and file
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - catalog: bash-linux-webserver
+                file: tasks/x.sh
+                name: X
+    expect: give either catalog
+  - name: task with neither catalog nor file
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - name: X
+    expect: give either catalog
+  - name: task from an unknown catalog key
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - catalog: bash-nope
+    expect: catalog 'bash-nope' is not in vme-stack's catalog
+  - name: task file without a name
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - file: tasks/x.sh
+    expect: needs a name
+  - name: task file missing
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - file: tasks/missing.sh
+                name: X
+    expect: file 'tasks/missing.sh' not found
+  - name: two tasks with one name
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - catalog: bash-linux-webserver
+              - catalog: bash-linux-webserver
+    expect: is used more than once
+  - name: task with an unknown type
+    patch:
+      all:
+        vars:
+          vme_manager:
+            tasks:
+              - catalog: bash-linux-webserver
+                type: powershell
+    expect: shell
   - name: Manager without the VME ISO
     patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {vme_iso_path: null}}}}}}}
     expect: "vme_manager needs the deploy server's media.vme_iso_path"

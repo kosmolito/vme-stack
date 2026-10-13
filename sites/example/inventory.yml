@@ -71,6 +71,13 @@ all:
           # default_role: User Admin  # default: the Manager's non-admin user role; never an admin role
           role_mappings:              # Manager role: [AD groups]; the whole set (replaces the source's)
             System Admin: [VME-Admins]
+      tasks:                          # the Manager's task library (Library > Automation > Tasks), run on demand
+        - catalog: bash-linux-webserver   # from vme-stack's catalog (ansible/roles/vme_tasks/files/catalog)
+        - file: tasks/linux-summary.sh    # a script next to this file
+          name: "Linux: system summary"
+          type: shell                 # default; the only type so far
+          target: resource            # default: runs on the VM or host it is started on (local: in the Manager)
+          sudo: false                 # default true
       datastore: nfs-prod             # move the Manager's disk to this datastore of its host's cluster
       autostart: false                # default (hpe-vm's); true: libvirt starts the VM with its host
       # The Manager's key pair to every cluster's hosts (stored in the Manager): a private key

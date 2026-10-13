@@ -135,7 +135,10 @@
                                  'ssl': vme_manager.smtp.ssl | default(false), 'has_user': 'user' in vme_manager.smtp,
                                  'has_password': 'password' in vme_manager.smtp}
                                 if vme_manager.smtp is defined and vme_manager.smtp is mapping else {}),
-                       'identity_sources': vme_manager.identity_sources | default([]) | vme_identity_sources} -%}
+                       'identity_sources': vme_manager.identity_sources | default([]) | vme_identity_sources,
+                       'tasks': vme_manager.tasks | default([]) | map('combine', {}) | list,
+                       'task_files_present': vme_manager.tasks | default([]) | selectattr('file', 'defined')
+                                             | map(attribute='file') | list | vme_site_files_present(inventory_dir)} -%}
       {%- endif -%}
       {%- set clouds = [] -%}
       {%- for c in vme_clouds | default([]) -%}

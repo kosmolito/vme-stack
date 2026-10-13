@@ -84,7 +84,7 @@ def _usable(ip, subnet):
     return a in subnet and a not in (subnet.network_address, subnet.broadcast_address)
 
 
-def _format_errors(site):
+def _format_errors(site, roles_dir):
     """Formats of the site-wide values (types and required keys: argument specs)."""
     errs = []
     net, media = site["network"], site["media"]
@@ -152,6 +152,32 @@ def _format_errors(site):
                 errs.append("vme_manager.smtp: tls (STARTTLS) and ssl (TLS from the start) exclude each other")
             if smtp.get("has_user") != smtp.get("has_password"):
                 errs.append("vme_manager.smtp.user and password go together (or neither: no login)")
+        catalog = _task_catalog(roles_dir)
+        names = []
+        for i, t in enumerate(mgr.get("tasks") or []):
+            label = f"vme_manager.tasks[{i}]"
+            if bool(t.get("catalog")) == bool(t.get("file")):
+                errs.append(
+                    f"{label}: give either catalog (a vme-stack catalog task) or file (a script next to the site)"
+                )
+                continue
+            if t.get("catalog"):
+                if t["catalog"] not in catalog:
+                    errs.append(
+                        f"{label}: catalog '{t['catalog']}' is not in vme-stack's catalog"
+                        f" ({', '.join(sorted(catalog))})"
+                    )
+                    continue
+                names.append(t.get("name") or catalog[t["catalog"]]["name"])
+            else:
+                if not t.get("name"):
+                    errs.append(f"{label}: file '{t['file']}' needs a name (the task's name in the Manager)")
+                if t["file"] not in (mgr.get("task_files_present") or []):
+                    errs.append(f"{label}: file '{t['file']}' not found in the site directory")
+                if t.get("name"):
+                    names.append(t["name"])
+        for n in _dupes(names):
+            errs.append(f"vme_manager.tasks: task name '{n}' is used more than once")
         sources = mgr.get("identity_sources") or []
         for n in _dupes([s["name"] for s in sources]):
             errs.append(f"vme_manager.identity_sources: name '{n}' is used more than once")
@@ -226,7 +252,7 @@ def vme_site_errors(site, roles_dir):
         for d in os.listdir(roles_dir)
         if d.startswith("boot_") and os.path.isfile(os.path.join(roles_dir, d, "tasks", "main.yml"))
     }
-    errs = _format_errors(site)
+    errs = _format_errors(site, roles_dir)
     net = site["network"]
     hosts = site["hosts"]
 
@@ -426,6 +452,20 @@ def vme_site_errors(site, roles_dir):
 HVM_LAYOUT = re.compile(r"^mvm-(\d+)\.(\d+)-ubuntu-24\.04-std-morpheus-amd64$")
 
 
+def _task_catalog(roles_dir):
+    """vme-stack's task catalog (roles/vme_tasks/files/catalog/catalog.yml): key -> defaults."""
+    import yaml
+
+    path = os.path.join(roles_dir, "vme_tasks", "files", "catalog", "catalog.yml")
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def vme_site_files_present(paths, site_dir):
+    """The paths (relative to the site directory) that are files (vme_manager.tasks[].file)."""
+    return [p for p in paths or [] if os.path.isfile(os.path.join(site_dir, str(p)))]
+
+
 def vme_identity_sources(sources):
     """vme_manager.identity_sources with defaults, without the bind passwords."""
     out = []
@@ -460,4 +500,5 @@ class FilterModule:
             "vme_site_errors": vme_site_errors,
             "newest_hvm_layout": newest_hvm_layout,
             "vme_identity_sources": vme_identity_sources,
+            "vme_site_files_present": vme_site_files_present,
         }

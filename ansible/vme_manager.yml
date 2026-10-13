@@ -1,6 +1,7 @@
 ---
 # Stage 6: the VME Manager VM, installed with HPE's hpe-vm on manager.host,
-# then first-time setup through its API (tenant, admin, license or trial).
+# then first-time setup through its API (tenant, admin, license or trial), its
+# settings (SMTP, identity sources) and its task library (vme_manager.tasks).
 # Run after hvm_hosts.yml:
 #   ansible-playbook vme_manager.yml -i ../sites/<site>/inventory.yml --vault-password-file <file>
 - name: Preflight
@@ -16,3 +17,4 @@
     - vme_manager_media
     - vme_manager
     - vme_manager_setup
+    - vme_tasks                       # the task library (vme_manager.tasks)

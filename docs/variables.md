@@ -67,6 +67,13 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_manager.identity_sources[].nested_groups` | bool |  | Count membership through nested groups (Include Member Groups). Default true. |
 | `vme_manager.identity_sources[].default_role` | str |  | Role every user of the source gets; the roles of matching role_mappings groups add to it. Must not be an admin role. Default: the Manager's non-admin user role (User Admin on VME 9.0). |
 | `vme_manager.identity_sources[].role_mappings` | dict |  | Manager role name -&gt; list of AD group names, e.g. {System Admin: [VME-Admins]}. Replaces the source's mappings (the set in the site is the whole set). Default none. |
+| `vme_manager.tasks` | list of dict |  | Tasks of the Manager's library (Library &gt; Automation &gt; Tasks), run on demand on a VM or host: from vme-stack's catalog (catalog) or a script next to the site (file). Created when missing, updated when the script or a setting differs; marked with the label vme-stack (tasks without it are never changed). One removed from the site stays. |
+| `vme_manager.tasks[].catalog` | str |  | Key of a vme-stack catalog task (roles/vme_tasks/files/catalog/catalog.yml), e.g. bash-linux-webserver. Give catalog or file. |
+| `vme_manager.tasks[].file` | str |  | Script file, relative to the site directory (e.g. tasks/hvm-health.sh). Give catalog or file. |
+| `vme_manager.tasks[].name` | str |  | The task's name in the Manager. Default: the catalog's name; required with file. |
+| `vme_manager.tasks[].type` | str: `shell` |  | Task type: shell (bash script). Default shell (the catalog's for catalog). |
+| `vme_manager.tasks[].target` | str: `resource`, `local` |  | resource: runs on the VM or host it is started on; local: inside the Manager VM. Default resource. |
+| `vme_manager.tasks[].sudo` | bool |  | Run the script as root (sudo). Default true. |
 | `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists. Default: stays local. |
 | `vme_manager.autostart` | bool |  | Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it. |
 | `vme_manager.ssh_private_key_file` | str |  | The Manager's key pair to every cluster's hosts as files: this and &lt;file&gt;.pub. It is stored in the Manager. Default: the Manager host's login key (its ansible_ssh_private_key_file, else ~/.ssh/id_ed25519). |

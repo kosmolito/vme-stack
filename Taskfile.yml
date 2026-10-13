@@ -79,7 +79,7 @@ tasks:
       - .venv/bin/yamllint .
       - .venv/bin/ruff check
       - .venv/bin/ruff format --check
-      - .venv/bin/shellcheck ee/build.sh ee/files/vme-stack-entrypoint
+      - .venv/bin/shellcheck ee/build.sh ee/files/vme-stack-entrypoint ansible/roles/vme_tasks/files/catalog/*.sh sites/example/tasks/*.sh
       - .venv/bin/actionlint
 
   test:

@@ -1,0 +1,123 @@
+---
+# Tasks of the Manager's library (vme_manager.tasks): from vme-stack's catalog
+# (files/catalog/) or a script next to the site. POST/PUT /api/tasks, the same fields
+# in API 9.0.2 and 9.1.0: taskType script, executeTarget, taskOptions shell.sudo,
+# file {sourceType local, content}. Created when missing, updated when the script or a
+# setting differs; marked with the label vme-stack. A task of the same name without
+# that label is someone else's: the run stops instead of changing it.
+# Needs the Manager login of vme_manager_setup (vme_login), run before in the same play.
+- name: Task library
+  when: vme_manager.tasks | default([]) | length > 0
+  vars:
+    vt_label: vme-stack
+    vt_catalog_dir: "{{ role_path }}/files/catalog"
+  block:
+    - name: Read the catalog and the site's task scripts
+      ansible.builtin.set_fact:
+        vt_want: >-
+          {%- set catalog = lookup('ansible.builtin.file', vt_catalog_dir ~ '/catalog.yml') | from_yaml -%}
+          {%- set out = [] -%}
+          {%- for t in vme_manager.tasks -%}
+          {%-   set c = catalog[t.catalog] if t.catalog is defined else {} -%}
+          {%-   set script = (vt_catalog_dir ~ '/' ~ t.catalog ~ '.sh') if t.catalog is defined else (inventory_dir ~ '/' ~ t.file) -%}
+          {{-   out.append({'name': t.name | default(c.name | default('')),
+                            'origin': ('catalog ' ~ t.catalog) if t.catalog is defined else ('file ' ~ t.file),
+                            'type': t.type | default(c.type | default('shell')),
+                            'target': t.target | default(c.target | default('resource')),
+                            'sudo': t.sudo | default(c.sudo | default(true)) | bool,
+                            'content': lookup('ansible.builtin.file', script)}) -}}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Read the Manager's tasks
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/tasks?max=1000"
+        validate_certs: false
+        headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vt_tasks
+      no_log: true
+
+    # Per wanted task: the Manager's task of that name (if any) and what differs.
+    # The UI stores scripts with CRLF: compared without carriage returns and trailing blanks.
+    - name: Compare the task library with the site
+      ansible.builtin.set_fact:
+        vt_plan: >-
+          {%- set out = [] -%}
+          {%- for w in vt_want -%}
+          {%-   set have = vt_tasks.json.tasks | selectattr('name', 'equalto', w.name) | first | default({}) -%}
+          {%-   set diff = [] -%}
+          {%-   if have -%}
+          {%-     if (have.file | default({}, true)).content | default('', true) | replace('\r', '') | trim != w.content | replace('\r', '') | trim -%}
+          {{-       diff.append('script') -}}
+          {%-     endif -%}
+          {%-     if have.executeTarget | default('') != w.target -%}{{ diff.append('target') }}{%- endif -%}
+          {%-     if (have.taskOptions | default({}, true))['shell.sudo'] | default('off', true) != ('on' if w.sudo else 'off') -%}
+          {{-       diff.append('sudo') -}}
+          {%-     endif -%}
+          {%-     if vt_label not in have.labels | default([], true) -%}{{ diff.append('label') }}{%- endif -%}
+          {%-   endif -%}
+          {{-   out.append(w | combine({'id': have.id | default(none), 'diff': diff,
+                                         'foreign': have | length > 0 and vt_label not in have.labels | default([], true),
+                                         'labels': (have.labels | default([], true) + [vt_label]) | unique})) -}}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Refuse to change tasks vme-stack does not manage
+      ansible.builtin.assert:
+        that: foreign | length == 0
+        fail_msg: >-
+          The Manager already has a task named {{ foreign | map(attribute='name') | join(', ') }} without the label
+          {{ vt_label }} (made by someone else): rename it in the Manager or give the site's task another name.
+        quiet: true
+      vars:
+        foreign: "{{ vt_plan | selectattr('foreign') | list }}"
+
+    - name: "Create or update tasks: {{ item.name }}"
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/tasks{{ '/' ~ item.id if item.id else '' }}"
+        method: "{{ 'PUT' if item.id else 'POST' }}"
+        validate_certs: false
+        headers: {Authorization: "Bearer {{ vme_login.json.access_token }}"}
+        body_format: json
+        body:
+          task:
+            name: "{{ item.name }}"
+            taskType: {code: script}
+            executeTarget: "{{ item.target }}"
+            labels: "{{ item.labels }}"
+            taskOptions: {shell.sudo: "{{ 'on' if item.sudo else 'off' }}"}
+            file: {sourceType: local, content: "{{ item.content }}"}
+        status_code: [200, 201, 400]
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      loop: "{{ vt_plan | rejectattr('id') | list + vt_plan | selectattr('id') | selectattr('diff') | list }}"
+      loop_control:
+        label: "{{ item.name }} ({{ 'create' if not item.id else 'update ' ~ item.diff | join(', ') }})"
+      register: vt_set
+      changed_when: true
+
+    - name: Check the Manager accepted the tasks
+      ansible.builtin.assert:
+        that: refused | length == 0
+        fail_msg: >-
+          {{ ['The Manager refused tasks:'] + refused | map(attribute='item.name') | zip(
+             refused | map(attribute='json') | map('default', {}) | map(attribute='msg', default='')) | map('join', ': ') | list }}
+        quiet: true
+      vars:
+        refused: "{{ vt_set.results | default([]) | rejectattr('skipped', 'defined') | rejectattr('status', 'in', [200, 201]) | list }}"
+
+    - name: Report the task library
+      ansible.builtin.debug:
+        msg: >-
+          {{ ['Task library (Library > Automation > Tasks; run with Actions > Run Task on a VM or host):']
+             + report }}
+      vars:
+        report: >-
+          {%- set out = [] -%}
+          {%- for t in vt_plan -%}
+          {{-   out.append(t.name ~ ' (' ~ t.origin ~ '): '
+                           ~ ('created' if not t.id else ('updated: ' ~ t.diff | join(', ')) if t.diff else 'up to date')) -}}
+          {%- endfor -%}
+          {{ out }}

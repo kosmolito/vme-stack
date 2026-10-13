@@ -123,6 +123,28 @@ argument_specs:
                 description: >-
                   Manager role name -> list of AD group names, e.g. {System Admin: [VME-Admins]}. Replaces the source's
                   mappings (the set in the site is the whole set). Default none.
+          tasks:
+            description: >-
+              Tasks of the Manager's library (Library > Automation > Tasks), run on demand on a VM or host: from
+              vme-stack's catalog (catalog) or a script next to the site (file). Created when missing, updated when the
+              script or a setting differs; marked with the label vme-stack (tasks without it are never changed). One
+              removed from the site stays.
+            type: list
+            elements: dict
+            options:
+              catalog:
+                type: str
+                description: >-
+                  Key of a vme-stack catalog task (roles/vme_tasks/files/catalog/catalog.yml), e.g. bash-linux-webserver.
+                  Give catalog or file.
+              file: {type: str, description: "Script file, relative to the site directory (e.g. tasks/hvm-health.sh). Give catalog or file."}
+              name: {type: str, description: "The task's name in the Manager. Default: the catalog's name; required with file."}
+              type: {type: str, choices: [shell], description: "Task type: shell (bash script). Default shell (the catalog's for catalog)."}
+              target:
+                type: str
+                choices: [resource, local]
+                description: "resource: runs on the VM or host it is started on; local: inside the Manager VM. Default resource."
+              sudo: {type: bool, description: "Run the script as root (sudo). Default true."}
           datastore:
             type: str
             description: >-
