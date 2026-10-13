@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-13
+
 ### Added
 
 - `vme_manager.tasks`: the Manager's task library (Library > Automation >
