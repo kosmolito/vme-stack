@@ -168,9 +168,12 @@
     msg: >-
       WARNING: the Manager's license ({{ lic.productTier | default('?') }}) {{ 'ended' if days | int < 0 else 'ends' }}
       {{ lic.endDate[:10] }} ({{ days | int | abs }} days {{ 'ago' if days | int < 0 else 'from now' }}).
-      {{ 'Set vme_manager.license_key (vault) and run deploy.yml or vme_manager.yml again.'
-         if vme_manager.license_key | default('') | length == 0 else 'Renew the key in vme_manager.license_key and run again.' }}
+      {{ todo }} and run deploy.yml or vme_manager.yml again,
+      or install it in the Manager (Administration > Settings > License).
   vars:
+    todo: >-
+      {{ 'Set vme_manager.license_key (vault) to a new key' if vme_manager.license_key | default('') | length == 0
+         else 'Put the new key in vme_manager.license_key' }}
     lic: "{{ vme_license_now.license | default({}) }}"
     days: "{{ (((lic.endDate | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - now(utc=true)).total_seconds() / 86400) | round | int }}"
   when: lic.endDate | default('', true) | length > 0 and days | int <= 30
