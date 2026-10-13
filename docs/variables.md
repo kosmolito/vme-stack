@@ -45,7 +45,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_manager.admin_password` | str | yes | *Secret.* Password of admin_user. |
 | `vme_manager.tenant` | str |  | Name of the Manager's master tenant. Default the site name. |
 | `vme_manager.email` | str |  | Email of the first admin. Default &lt;admin_user&gt;@&lt;network.domain&gt;. |
-| `vme_manager.license_key` | str |  | *Secret.* VME license key. Default: none, the Manager starts a trial. |
+| `vme_manager.license_key` | str |  | *Secret.* VME license key. Default: none, the Manager starts a trial. Installed at setup, or on a later run when the Manager does not have it yet. |
 | `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists. Default: stays local. |
 | `vme_manager.autostart` | bool |  | Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it. |
 | `vme_manager.ssh_private_key_file` | str |  | The Manager's key pair to every cluster's hosts as files: this and &lt;file&gt;.pub. It is stored in the Manager. Default: the Manager host's login key (its ansible_ssh_private_key_file, else ~/.ssh/id_ed25519). |

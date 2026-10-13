@@ -20,6 +20,9 @@ empty one).
 - The Manager install watches the Manager VM's first-boot setup (through its
   QEMU guest agent) while `hpe-vm` runs, and stops with the VM's error output
   when `morpheus-ctl reconfigure` failed, instead of waiting 90 minutes.
+- `vme_manager.license_key` set after the first setup is installed on the next
+  run (the Manager checks the key first; one it already has is skipped).
+- A warning when the Manager's license ends within 30 days or has ended.
 
 ## [0.1.9] - 2026-10-13
 

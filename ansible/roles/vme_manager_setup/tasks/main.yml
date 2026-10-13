@@ -2,7 +2,8 @@
 # First-time setup of the VME Manager through its setup API (what the browser
 # wizard does): master tenant, first admin user, appliance name/URL, no Morpheus
 # Hub, license key from the vault or none (trial). Only while the Manager reports
-# setupNeeded; afterwards an API login proves the admin account works.
+# setupNeeded; afterwards an API login proves the admin account works, a license key
+# set later is installed, and a license ending soon is reported.
 # API calls go from probe_from (the deploy server reaches the Manager).
 - name: Ask the Manager whether setup is needed
   ansible.builtin.uri:
@@ -75,11 +76,101 @@
   register: vme_license
   no_log: true
 
+# A key set after the first setup (or a new one replacing a trial or an old key):
+# the Manager decodes it without installing it (license/test); install it when no
+# installed license has its keyId. Installed licenses stay (the Manager stacks them).
+- name: Install the license key of the site
+  when: vme_manager.license_key | default('') | length > 0
+  block:
+    - name: Decode the license key with the Manager
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/license/test"
+        method: POST
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ vme_login.json.access_token }}"
+        body_format: json
+        body: {license: "{{ vme_manager.license_key }}"}
+        status_code: [200, 400]
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vme_license_test
+      no_log: true
+
+    - name: Check the license key is valid
+      ansible.builtin.assert:
+        that: vme_license_test.status == 200 and vme_license_test.json.license.keyId is defined
+        fail_msg: >-
+          The Manager rejects vme_manager.license_key: {{ vme_license_test.json.msg | default('HTTP ' ~ vme_license_test.status) }}
+        quiet: true
+
+    - name: Install the license
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/license"
+        method: POST
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ vme_login.json.access_token }}"
+        body_format: json
+        body: {license: "{{ vme_manager.license_key }}"}
+        status_code: [200, 400]
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vme_license_install
+      when: vme_license_test.json.license.keyId not in installed_ids
+      changed_when: true
+      no_log: true
+      vars:
+        installed_ids: "{{ vme_license.json.installedLicenses | default([]) | map(attribute='keyId') | list }}"
+
+    - name: Read the license status again
+      ansible.builtin.uri:
+        url: "https://{{ manager.ip }}/api/license"
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ vme_login.json.access_token }}"
+        return_content: true
+      delegate_to: "{{ probe_from }}"
+      register: vme_license_after
+      when: vme_license_install is not skipped
+      no_log: true
+
+    # The answer has no success flag (API docs 9.0/9.1): check the key is installed now.
+    - name: Check the license was installed
+      ansible.builtin.assert:
+        that: vme_license_test.json.license.keyId in vme_license_after.json.installedLicenses | default([]) | map(attribute='keyId') | list
+        fail_msg: >-
+          Installing the license failed: HTTP {{ vme_license_install.status | default('?') }}
+          {{ vme_license_install.json.msg | default(vme_license_install.msg | default('')) }}
+        quiet: true
+      when: vme_license_install is not skipped
+
+# The status after an install, else the first read (a skipped task still registers).
+- name: Note the current license status
+  ansible.builtin.set_fact:
+    vme_license_now: >-
+      {{ (vme_license_after if vme_license_after is defined and vme_license_after is not skipped else vme_license).json }}
+  no_log: true
+
 - name: Report
   vars:
     license_fields: [licenseType, productTier, startDate, endDate, maxInstances, maxMemory, maxStorage, hardLimit]
   ansible.builtin.debug:
     msg:
       - "Manager {{ manager.url }}: {{ 'set up now' if vme_setup is not skipped else 'already set up' }}, login as {{ manager.admin_user }} works"
-      - "License: {{ vme_license.json.license | default({}) | dict2items | selectattr('key', 'in', license_fields) | items2dict
+      - "License: {{ vme_license_now.license | default({}) | dict2items | selectattr('key', 'in', license_fields) | items2dict
                      | default('none (trial / unlicensed)', true) }}"
+
+# A license that has ended or ends within 30 days (a trial lasts 60): a warning,
+# the run goes on. With hardLimit the Manager stops provisioning when it ends.
+- name: Warn about the license end date
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: the Manager's license ({{ lic.productTier | default('?') }}) {{ 'ended' if days | int < 0 else 'ends' }}
+      {{ lic.endDate[:10] }} ({{ days | int | abs }} days {{ 'ago' if days | int < 0 else 'from now' }}).
+      {{ 'Set vme_manager.license_key (vault) and run deploy.yml or vme_manager.yml again.'
+         if vme_manager.license_key | default('') | length == 0 else 'Renew the key in vme_manager.license_key and run again.' }}
+  vars:
+    lic: "{{ vme_license_now.license | default({}) }}"
+    days: "{{ (((lic.endDate | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - now(utc=true)).total_seconds() / 86400) | round | int }}"
+  when: lic.endDate | default('', true) | length > 0 and days | int <= 30

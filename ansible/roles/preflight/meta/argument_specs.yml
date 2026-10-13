@@ -59,7 +59,12 @@ argument_specs:
           admin_password: {type: str, required: true, no_log: true, description: "Password of admin_user."}
           tenant: {type: str, description: Name of the Manager's master tenant. Default the site name.}
           email: {type: str, description: "Email of the first admin. Default <admin_user>@<network.domain>."}
-          license_key: {type: str, no_log: true, description: "VME license key. Default: none, the Manager starts a trial."}
+          license_key:
+            type: str
+            no_log: true
+            description: >-
+              VME license key. Default: none, the Manager starts a trial. Installed at setup,
+              or on a later run when the Manager does not have it yet.
           datastore:
             type: str
             description: >-
