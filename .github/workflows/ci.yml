@@ -1,11 +1,24 @@
 # Lint and site tests on every pull request and push to main.
 # Same checks locally: task check (Taskfile.yml).
+# Skipped when only files no check reads change (a commit touching anything else runs
+# in full). Not README.md, CHANGELOG.md, ee/README.md, ansible/examples/README.md,
+# docs/variables.md: task test checks their version pins and generated content.
 name: ci
 
 on:
   pull_request:
+    paths-ignore:
+      - spec.md
+      - CLAUDE.md
+      - sites/example/README.md
+      - ansible/roles/*/README.md
   push:
     branches: [main]
+    paths-ignore:
+      - spec.md
+      - CLAUDE.md
+      - sites/example/README.md
+      - ansible/roles/*/README.md
 
 permissions:
   contents: read
