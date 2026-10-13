@@ -103,6 +103,23 @@
   register: mgr_rec
   failed_when: mgr_rec.json.servers | selectattr('name', 'equalto', manager.hostname) | list | length != 1
 
+# The Manager is only moved when the site says so (vme_manager.datastore): on the
+# host's local datastore it goes down with that host and cannot start elsewhere.
+- name: Warn when the Manager VM's disk is on its host's local datastore
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: the Manager VM's disk is on the local datastore of {{ manager.host }}: when that host fails,
+      the Manager is down with it and cannot be started on another host.
+      {{ ('Set vme_manager.datastore to one of ' ~ shared | join(', ')
+           ~ ' and run deploy.yml again: the Manager moves its disk while running.') if shared
+         else 'Add a shared datastore to its cluster (vme_clusters[].datastores) and set vme_manager.datastore.' }}
+  when: root_ds.id | default(0) in local_ids or root_ds.name | default('') == 'local'
+  vars:
+    mgr_vm: "{{ mgr_rec.json.servers | selectattr('name', 'equalto', manager.hostname) | first }}"
+    root_ds: "{{ (mgr_vm.volumes | selectattr('rootVolume') | first | default({})).datastore | default({}, true) }}"
+    local_ids: "{{ vme_manager_cluster_ds | default([]) | selectattr('externalId', 'equalto', 'local') | map(attribute='id') | list }}"
+    shared: "{{ (manager_clusters | selectattr('hosts', 'contains', manager.host) | first).datastores | map(attribute='name') | list }}"
+
 - name: Convert the Manager VM to managed
   ansible.builtin.uri:
     url: "{{ vme_api }}/servers/{{ mgr_vm.id }}/make-managed"

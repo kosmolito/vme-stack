@@ -155,7 +155,8 @@ argument_specs:
           datastore:
             type: str
             description: >-
-              A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists. Default: stays local.
+              A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists (online, by the
+              Manager's own Reconfigure). Default: stays on the host's local datastore, and every run warns.
           autostart: {type: bool, description: "Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it."}
           ssh_private_key_file:
             type: str

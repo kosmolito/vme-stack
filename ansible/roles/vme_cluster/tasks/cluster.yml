@@ -196,17 +196,11 @@
 
     - name: Report the local datastore
       ansible.builtin.debug:
-        msg: "{{ [state] + ([mgr_note] if mgr_on_local else []) }}"
-      vars:
-        ds_local: "{{ ds_local_find.json.datastores | selectattr('externalId', 'equalto', 'local') | first }}"
-        state: >-
+        msg: >-
           Local datastore '{{ ds_local.name }}' of cluster {{ cl.name }}: {{ cl.local_datastore }}
           ({{ 'set now' if ds_local_set is changed else 'already' }})
-        mgr_on_local: >-
-          {{ cl.local_datastore == 'inactive' and manager.host in cl.hosts
-             and manager.datastore | default('', true) | length == 0 }}
-        mgr_note: >-
-          The Manager VM's disk stays on it (it keeps running); vme_manager.datastore moves it to shared storage.
+      vars:
+        ds_local: "{{ ds_local_find.json.datastores | selectattr('externalId', 'equalto', 'local') | first }}"
 
 # For manager_vm.yml: the group and datastores of the Manager host's cluster.
 - name: Remember the Manager's cluster

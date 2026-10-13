@@ -74,7 +74,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_manager.tasks[].type` | str: `bash` |  | Task type, stated explicitly (not guessed from the file): bash = the Manager's Shell Script (task type code script; the only type so far; later e.g. powershell = PowerShell Script, code winrmTask). Required with file; catalog entries take the catalog's. The run checks the Manager offers it (the license decides). |
 | `vme_manager.tasks[].target` | str: `resource`, `local` |  | resource: runs on the VM or host it is started on; local: inside the Manager VM. Default resource. |
 | `vme_manager.tasks[].sudo` | bool |  | Run the script as root (sudo). Default true. |
-| `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists. Default: stays local. |
+| `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists (online, by the Manager's own Reconfigure). Default: stays on the host's local datastore, and every run warns. |
 | `vme_manager.autostart` | bool |  | Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it. |
 | `vme_manager.ssh_private_key_file` | str |  | The Manager's key pair to every cluster's hosts as files: this and &lt;file&gt;.pub. It is stored in the Manager. Default: the Manager host's login key (its ansible_ssh_private_key_file, else ~/.ssh/id_ed25519). |
 | `vme_manager.ssh_private_key` | str |  | *Secret.* The Manager's private key itself instead of the file (together with ssh_public_key). |

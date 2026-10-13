@@ -19,6 +19,13 @@ empty one).
   again. Needs `datastores` for `inactive`. Not set: left as it is, for an
   admin to switch in the Manager UI.
 
+### Changed
+
+- Every run warns while the Manager VM's disk is on its host's local
+  datastore (it goes down with that host), naming the cluster's shared
+  datastores for `vme_manager.datastore`. The move itself still happens only
+  when the site sets `vme_manager.datastore`.
+
 ## [0.1.11] - 2026-10-13
 
 ### Added
