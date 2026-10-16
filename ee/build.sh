@@ -13,7 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 VERSION=$(cat VERSION)
-TESTED=${VME_TESTED:-"VME 9.0.2, hpe-vm 1.0.14-1, HPE_HVM_Install_24.04_S5Q83-11078"}
+TESTED=${VME_TESTED:-"VME 9.1.0, hvmcli 1.0.0, HPE_HVM_Install_26.04_S6E64-11270"}
 
 rm -rf _stage context
 mkdir -p _stage/code
