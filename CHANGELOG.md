@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-10-17
+
 ### Fixed
 
 - Redfish boot of a Dell server failed when its iDRAC stopped answering for a
