@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-10-16
+
 ### Added
 
 - VME 9.1.0 with HPE's HVM OS 26.04 hosts, the way HPE installs them: the
