@@ -1,10 +1,19 @@
 ---
 # One HVM cluster (loop var cl, from main.yml): created by the Manager on its
 # cloud and group, then its shared datastores.
+# HVM OS 26.04 hosts (hvmcli, virtSwitch networking) need the virtswitch layout,
+# which takes DNS/NTP instead of interface names.
+- name: "Look for hvmcli on the cluster's first host: {{ cl.hosts[0] }}"
+  ansible.builtin.stat:
+    path: /opt/hvmcli/bin/hvmcli
+  delegate_to: "{{ cl.hosts[0] }}"
+  register: cl_hvmcli
+
 - name: "Choose the layout of cluster {{ cl.name }}"
   ansible.builtin.set_fact:
+    cl_host_os: "{{ '26.04' if cl_hvmcli.stat.exists else '24.04' }}"
     vme_layout_code: "{{ cl.layout if cl.layout | length > 0
-                         else layouts.json.layouts | map(attribute='code') | newest_hvm_layout }}"
+                         else layouts.json.layouts | map(attribute='code') | newest_hvm_layout('26.04' if cl_hvmcli.stat.exists else '24.04') }}"
 
 - name: "Check the layout exists: {{ vme_layout_code }}"
   ansible.builtin.assert:
@@ -36,37 +45,47 @@
         group: {id: "{{ vme_group_ids[cl.group] | int }}"}
         cloud: {id: "{{ vme_cloud_ids[cl.cloud] | int }}"}
         layout: {id: "{{ (layouts.json.layouts | selectattr('code', 'equalto', vme_layout_code) | first).id }}"}
-        server:
-          name: "{{ cl.name }}"
-          visibility: private
-          plan:
-            id: "{{ (plan_find.json.servicePlans | selectattr('code', 'equalto', 'manual-default') | first).id }}"
-            code: manual-default
-          # Objects with ip (+ name), not plain strings: the API reads .ip.
-          sshHosts: >-
-            {%- set out = [] -%}
-            {%- for h in cl.hosts -%}{{ out.append({'ip': hostvars[h].ip, 'name': h}) }}{%- endfor -%}
-            {{ out }}
-          sshPort: 22
-          sshUsername: "{{ hostvars[cl.hosts[0]].admin_user }}"
-          # The Manager only probes port 22 without a password and never logs in
-          # (2026-10-10); HPE's docs also ask for user + password.
-          sshPassword: "{{ hostvars[cl.hosts[0]].admin_password }}"
-          network: {name: "{{ hostvars[cl.hosts[0]].mgmt_interface }}"}
-          cpuPlacementMode: unmanaged
-          config:
-            provisionKey: "{{ vme_key_id | int }}"
-            computeInterfaceName: "{{ hostvars[cl.hosts[0]].compute_interface }}"
-            computeVlans: "{{ cl.compute_vlans | join(',') }}"
-            overlayInterfaceName: ""
-            cpuArch: x86_64
-            cpuModel: host-passthrough
-            dynamicPlacementMode: "off"
-            powerPolicy: balanced
-            # 9.1.0 documents the mode here; server.cpuPlacementMode stays for 9.0.x.
-            vcpuPlacementMode: unmanaged
+        server: "{{ cl_server | combine({'network': {'name': h0.mgmt_interface}} if cl_host_os == '24.04' else {}) }}"
     status_code: [200, 201]
     timeout: 120
+  vars:
+    h0: "{{ hostvars[cl.hosts[0]] }}"
+    cl_server:
+      name: "{{ cl.name }}"
+      visibility: private
+      plan:
+        id: "{{ (plan_find.json.servicePlans | selectattr('code', 'equalto', 'manual-default') | first).id }}"
+        code: manual-default
+      # Objects with ip (+ name), not plain strings: the API reads .ip.
+      sshHosts: >-
+        {%- set out = [] -%}
+        {%- for h in cl.hosts -%}{{ out.append({'ip': hostvars[h].ip, 'name': h}) }}{%- endfor -%}
+        {{ out }}
+      sshPort: 22
+      sshUsername: "{{ h0.admin_user }}"
+      # The Manager only probes port 22 without a password and never logs in
+      # (2026-10-10); HPE's docs also ask for user + password.
+      sshPassword: "{{ h0.admin_password }}"
+      # The layouts' vcpuPlacementMode field (9.0.2 and 9.1.0).
+      cpuPlacementMode: unmanaged
+      config: "{{ cl_config_common | combine(cl_config_26 if cl_host_os == '26.04' else cl_config_24) }}"
+    cl_config_common:
+      provisionKey: "{{ vme_key_id | int }}"
+      cpuArch: x86_64
+      cpuModel: host-passthrough
+      dynamicPlacementMode: "off"
+      powerPolicy: balanced
+    cl_config_24:
+      computeInterfaceName: "{{ h0.compute_interface }}"
+      computeVlans: "{{ cl.compute_vlans | join(',') }}"
+      overlayInterfaceName: ""
+    # The virtswitch layout (HVM OS 26.04) has no interface fields; the hosts'
+    # networks are their virtSwitches. dns1-3, ntp1-2 as the layout's form.
+    cl_config_26: >-
+      {{ dict(['dns1', 'dns2', 'dns3'] | zip(h0.dns))
+         | combine(dict(['ntp1', 'ntp2'] | zip(h0.ntp_servers)))
+         | combine({'searchDomain': h0.domain})
+         | combine({'proxy': h0.proxy} if h0.proxy | default(none) else {}) }}
   delegate_to: "{{ probe_from }}"
   register: cluster_new
   failed_when: false

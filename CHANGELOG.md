@@ -11,12 +11,20 @@ empty one).
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- Cluster create also sends `config.vcpuPlacementMode: unmanaged`, where the
-  VME 9.1.0 API documents the CPU placement mode (`server.cpuPlacementMode`
-  stays for 9.0.x). Checked: 9.0.2 (9.0.1 docs) and 9.1.0 docs; not yet run on
-  a Manager.
+- VME 9.1.0 with HPE's HVM OS 26.04 hosts, the way HPE installs them: the
+  host's first boot builds the management virtSwitch `vs0` with `hvmcli`, the
+  Manager is deployed with `hvmcli deploy manager`, and the cluster uses the
+  virtswitch layout (DNS, search domain and NTP from the site). Chosen per host
+  from the HVM ISO; Ubuntu 24.04 hosts (VME 9.0.2) work as before. Tested on
+  bare metal with one NIC (shared layout); the dedicated layout and
+  `compute_vlans` are not supported on 26.04 hosts yet.
+
+### Fixed
+
+- A host ISO built after the site switched to another HVM ISO booted the old
+  ISO's GRUB menu (`grub.cfg` was kept from the earlier build).
 
 ## [0.1.12] - 2026-10-13
 

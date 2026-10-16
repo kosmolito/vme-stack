@@ -44,7 +44,9 @@ argument_specs:
           from is not on the mgmt network. Logged in with the deploy server's key. Default: direct SSH.
         type: str
       vme_manager:
-        description: The VME Manager VM, installed with HPE's hpe-vm onto the one host in group vme_manager. Leave out to install the hosts only.
+        description: >-
+          The VME Manager VM, installed with HPE's installer (hpe-vm on Ubuntu 24.04 hosts, hvmcli on HVM OS 26.04 hosts)
+          onto the one host in group vme_manager. Leave out to install the hosts only.
         type: dict
         options:
           ip: {type: str, required: true, description: "The Manager VM's IP on the mgmt network (netmask, gateway and DNS come from network)."}
@@ -157,7 +159,7 @@ argument_specs:
             description: >-
               A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists (online, by the
               Manager's own Reconfigure). Default: stays on the host's local datastore, and every run warns.
-          autostart: {type: bool, description: "Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it."}
+          autostart: {type: bool, description: "Start the Manager VM with its host (libvirt autostart). Default false, as HPE's installer sets it."}
           ssh_private_key_file:
             type: str
             description: >-

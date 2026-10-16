@@ -1,9 +1,10 @@
 #cloud-config
 {#
   HPE's seed from the site's HVM ISO (/server/user-data, read by the seed
-  role) with our answers merged in: its four interactive-sections (storage,
-  identity, network, proxy) answered, plus the timezone and the install proof.
-  Everything else stays as HPE ships it on that ISO.
+  role) with our answers merged in: its interactive-sections (storage,
+  identity, network, proxy; locale keeps HPE's value) answered, plus the
+  timezone and the install proof. Everything else stays as HPE ships it on
+  that ISO.
 #}
 {% set answers %}
 # Live installer session only (not the installed system): a login for the
@@ -111,6 +112,10 @@ autoinstall:
     # Install proof: the installed system gets the datasource "None", so keep the
     # live installer's instance-id (<host>-<seed hash>, from meta-data).
     - mkdir -p /target/etc/vme-stack && cp /var/lib/cloud/data/instance-id /target/etc/vme-stack/install-id
+{% if 'configure_mgmt_ip.sh' in hpe_seed %}
+    # HVM OS 26.04: HPE's first boot builds vs0 from installer-config (hvmcli_netcfg.py).
+    - {{ ("python3 - " ~ (mgmt_interface | trim | quote) ~ " <<'VMESTACK'\n" ~ lookup('ansible.builtin.file', 'hvmcli_netcfg.py') ~ "\nVMESTACK") | to_json }}
+{% endif %}
 
   user-data:
     hostname: {{ inventory_hostname }}
@@ -126,6 +131,7 @@ autoinstall:
 {% endset %}
 {# Ours win for keys both set; lists both set (late-commands) are HPE's, then ours. #}
 {% set hpe = hpe_seed | from_yaml %}
-{% set hpe_auto = hpe.autoinstall | dict2items | rejectattr('key', 'eq', 'interactive-sections') | items2dict %}
+{# Our storage replaces HPE's (26.04 ISOs preset layout direct): merged, its keys would leak into ours. #}
+{% set hpe_auto = hpe.autoinstall | dict2items | rejectattr('key', 'in', ['interactive-sections', 'storage']) | items2dict %}
 {% set seed = (hpe | combine({'autoinstall': hpe_auto})) | combine(answers | from_yaml, recursive=True, list_merge='append') %}
 {{ seed | to_nice_yaml(indent=2, width=1000, sort_keys=False) }}

@@ -124,9 +124,41 @@
     - name: Check and reload sshd now
       ansible.builtin.meta: flush_handlers
 
+# HVM OS 26.04: HPE's first boot puts the management network on an hvmcli
+# virtSwitch (Linux bridge) instead of our netplan bonds.
+- name: Look for hvmcli (HVM OS 26.04)
+  ansible.builtin.stat:
+    path: /opt/hvmcli/bin/hvmcli
+  register: hvmcli_bin
+
+- name: Check the management virtSwitch
+  when: hvmcli_bin.stat.exists
+  block:
+    - name: Read the virtSwitches
+      ansible.builtin.command: /opt/hvmcli/bin/hvmcli virtswitch list --json
+      become: true
+      register: vswitches
+      changed_when: false
+
+    - name: Check a virtSwitch carries the management address
+      ansible.builtin.assert:
+        that:
+          - mgmt_vs | length == 1
+          - mgmt_vs[0].managementIp == ip
+          - mgmt_vs[0].managementGateway | default('') == gateway
+          - nics is not defined or mgmt_vs[0].baseInterfaces | length == nics.mgmt | length
+        fail_msg: >-
+          No hvmcli virtSwitch matches the site's management network ({{ ip }} via {{ gateway }}
+          {{- ', ' ~ nics.mgmt | length ~ ' port(s)' if nics is defined }}). HPE's first boot builds it
+          from /opt/HPE/installer-config (log: /var/log/cloud-init-output.log, lines "HPE:").
+          Found: {{ (vswitches.stdout | from_json).data | default([]) | map(attribute='virtSwitchName') | join(', ') or 'none' }}
+        quiet: true
+      vars:
+        mgmt_vs: "{{ (vswitches.stdout | from_json).data | default([]) | selectattr('trafficTypes', 'contains', 'management') | list }}"
+
 # Bond checks for the generated layouts; a raw netplan is the site's own design.
 - name: Check bonds of the nics layout
-  when: nics is defined
+  when: nics is defined and not hvmcli_bin.stat.exists
   block:
     - name: Read bond state
       ansible.builtin.command: "cat /proc/net/bonding/{{ item.bond }}"
@@ -146,19 +178,26 @@
         label: "{{ item.item.bond }}"
 
 # Before cluster join the IP sits on mgmt_interface; hpe-vm later moves it to the OVS bridge "mgmt".
-- name: "Read the IPv4 addresses of the mgmt interface and bridge: {{ mgmt_interface }}"
+# HVM OS 26.04: on the management virtSwitch's bridge.
+- name: "Read the IPv4 addresses of the mgmt interface and bridge: {{ mgmt_ifaces | join(', ') }}"
   ansible.builtin.shell: |
     set -o pipefail
-    for i in {{ mgmt_interface | quote }} mgmt; do ip -4 -o addr show dev "$i" 2>/dev/null || true; done | awk '{print $2, $4}'
+    for i in {{ mgmt_ifaces | map('quote') | join(' ') }}; do ip -4 -o addr show dev "$i" 2>/dev/null || true; done | awk '{print $2, $4}'
   args:
     executable: /bin/bash
   register: mgmt_addrs
   changed_when: false
+  vars:
+    mgmt_ifaces: "{{ ((vswitches.stdout | from_json).data | selectattr('trafficTypes', 'contains', 'management') | map(attribute='bridgeName') | list)
+                     if hvmcli_bin.stat.exists else [mgmt_interface, 'mgmt'] }}"
 
-- name: Check the management address sits on {{ mgmt_interface }}
+- name: Check the management address sits on the management interface
   ansible.builtin.assert:
     that: mgmt_addrs.stdout_lines | map('split') | map(attribute=1) | map('regex_replace', '/.*$', '') | select('equalto', ip) | list | length > 0
-    fail_msg: "{{ ip }} is on neither {{ mgmt_interface }} nor the hpe-vm bridge mgmt (found: {{ mgmt_addrs.stdout_lines | join('; ') or 'nothing' }})"
+    fail_msg: >-
+      {{ ip }} is not on {{ 'the management virtSwitch bridge' if hvmcli_bin.stat.exists
+                            else mgmt_interface ~ ' nor the hpe-vm bridge mgmt' }}
+      (found: {{ mgmt_addrs.stdout_lines | join('; ') or 'nothing' }})
     quiet: true
 
 # Catches what no parser can: e.g. bond MTU above what the NICs support

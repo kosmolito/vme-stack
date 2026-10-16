@@ -36,7 +36,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `network.bond_mode` | str: `active-backup`, `802.3ad` |  | Bond mode of the nics layout. Default active-backup (no switch config); 802.3ad needs LACP on the switch. |
 | `network.compute_vlans` | list of int |  | VLANs for VM traffic on the compute bridge, set up when a cluster is created. Required when hosts have a compute interface. |
 | `ssh_jump` | str |  | Jump host (user@host) to reach the deploy server and the hosts through, e.g. when the machine you run from is not on the mgmt network. Logged in with the deploy server's key. Default: direct SSH. |
-| `vme_manager` | dict |  | The VME Manager VM, installed with HPE's hpe-vm onto the one host in group vme_manager. Leave out to install the hosts only. |
+| `vme_manager` | dict |  | The VME Manager VM, installed with HPE's installer (hpe-vm on Ubuntu 24.04 hosts, hvmcli on HVM OS 26.04 hosts) onto the one host in group vme_manager. Leave out to install the hosts only. |
 | `vme_manager.ip` | str | yes | The Manager VM's IP on the mgmt network (netmask, gateway and DNS come from network). |
 | `vme_manager.hostname` | str | yes | The Manager VM's host name. |
 | `vme_manager.url` | str |  | URL users and hosts reach the Manager by. Default https://&lt;ip&gt;. A name must resolve to ip on every network.dns server (preflight checks it). |
@@ -75,7 +75,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `vme_manager.tasks[].target` | str: `resource`, `local` |  | resource: runs on the VM or host it is started on; local: inside the Manager VM. Default resource. |
 | `vme_manager.tasks[].sudo` | bool |  | Run the script as root (sudo). Default true. |
 | `vme_manager.datastore` | str |  | A datastore of the Manager host's cluster to move the Manager's disk to once the cluster exists (online, by the Manager's own Reconfigure). Default: stays on the host's local datastore, and every run warns. |
-| `vme_manager.autostart` | bool |  | Start the Manager VM with its host (libvirt autostart). Default false, as hpe-vm sets it. |
+| `vme_manager.autostart` | bool |  | Start the Manager VM with its host (libvirt autostart). Default false, as HPE's installer sets it. |
 | `vme_manager.ssh_private_key_file` | str |  | The Manager's key pair to every cluster's hosts as files: this and &lt;file&gt;.pub. It is stored in the Manager. Default: the Manager host's login key (its ansible_ssh_private_key_file, else ~/.ssh/id_ed25519). |
 | `vme_manager.ssh_private_key` | str |  | *Secret.* The Manager's private key itself instead of the file (together with ssh_public_key). |
 | `vme_manager.ssh_public_key` | str |  | The public key line of ssh_private_key. |

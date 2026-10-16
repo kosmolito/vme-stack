@@ -29,11 +29,13 @@
   ansible.builtin.assert:
     that:
       - hpe_auto.version is defined
-      - hpe_auto['interactive-sections'] | default([]) | difference(['storage', 'identity', 'network', 'proxy']) | length == 0
+      # locale: HPE's seed sets it (26.04 ISOs also list it as interactive).
+      - hpe_auto['interactive-sections'] | default([]) | difference(['storage', 'identity', 'network', 'proxy', 'locale']) | length == 0
+      - "'locale' not in hpe_auto['interactive-sections'] | default([]) or hpe_auto.locale is defined"
     fail_msg: >-
       {{ hvm_src_iso }}: /server/user-data is not the autoinstall seed we know
       (interactive-sections: {{ hpe_auto['interactive-sections'] | default('none') }});
-      the seed role answers storage, identity, network and proxy only.
+      the seed role answers storage, identity, network and proxy, and keeps HPE's locale.
     quiet: true
 
 - name: Render user-data

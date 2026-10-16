@@ -453,7 +453,10 @@ def vme_site_errors(site, roles_dir):
     return errs
 
 
-HVM_LAYOUT = re.compile(r"^mvm-(\d+)\.(\d+)-ubuntu-24\.04-std-morpheus-amd64$")
+HVM_LAYOUT = {
+    "24.04": re.compile(r"^mvm-(\d+)\.(\d+)-ubuntu-24\.04-std-morpheus-amd64$"),
+    "26.04": re.compile(r"^mvm-(\d+)\.(\d+)-virtswitch-ubuntu-26\.04-morpheus-amd64$"),
+}
 
 
 def _task_catalog(roles_dir):
@@ -491,10 +494,11 @@ def vme_identity_sources(sources):
     return out
 
 
-def newest_hvm_layout(codes):
-    """The newest standard HVM cluster layout code among codes ('' if none):
-    mvm-1.2-... on VME 8.1, mvm-1.3-... on 9.0."""
-    hvm = [(tuple(map(int, m.groups())), c) for c in codes if (m := HVM_LAYOUT.match(c or ""))]
+def newest_hvm_layout(codes, host_os="24.04"):
+    """The newest standard HVM cluster layout code for hosts on host_os among codes
+    ('' if none): mvm-1.2-... on VME 8.1, mvm-1.3-... on 9.0; HVM OS 26.04 hosts
+    (VME 9.1): mvm-2.0-virtswitch-...."""
+    hvm = [(tuple(map(int, m.groups())), c) for c in codes if (m := HVM_LAYOUT[host_os].match(c or ""))]
     return max(hvm)[1] if hvm else ""
 
 

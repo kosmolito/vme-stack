@@ -1,13 +1,22 @@
 ---
 # Deploy the VME Manager VM with HPE's own non-interactive installer on this
-# host: hpe-vm --install, which also builds the OVS mgmt bridge (-i).
-# No -c/-v: with them hpe-vm puts the Manager VM's NIC on the compute bridge,
-# tagged with the -v VLAN (seen 2026-10-10), not on the mgmt network its IP
-# belongs to. The compute bridge is set up at cluster creation instead.
+# host. Ubuntu 24.04 hosts: hpe-vm --install, which also builds the OVS mgmt
+# bridge (-i). No -c/-v: with them hpe-vm puts the Manager VM's NIC on the
+# compute bridge, tagged with the -v VLAN (seen 2026-10-10), not on the mgmt
+# network its IP belongs to. The compute bridge is set up at cluster creation
+# instead. HVM OS 26.04 hosts: hvmcli deploy manager onto the management
+# virtSwitch HPE's first boot built (hpe-vm does not exist there).
 # Skipped when the Manager already answers.
-- name: Set the hpe-vm log path
+- name: Look for hvmcli (HVM OS 26.04)
+  ansible.builtin.stat:
+    path: /opt/hvmcli/bin/hvmcli
+  register: hvmcli_bin
+
+- name: Set the installer, its unit and log
   ansible.builtin.set_fact:
-    hpe_vm_log: /var/log/vme-stack-hpe-vm-install.log
+    mgr_tool: "{{ 'hvmcli' if hvmcli_bin.stat.exists else 'hpe-vm' }}"
+    mgr_unit: "{{ 'vme-stack-hvmcli-deploy' if hvmcli_bin.stat.exists else 'vme-stack-hpe-vm' }}"
+    hpe_vm_log: "{{ '/var/log/vme-stack-hvmcli-deploy.log' if hvmcli_bin.stat.exists else '/var/log/vme-stack-hpe-vm-install.log' }}"
 
 - name: Check whether the Manager answers on {{ manager.ip }}
   ansible.builtin.uri:
@@ -53,7 +62,7 @@
 
     # The output may contain the password: keep the files root-only
     # (script(1) keeps an existing file's mode).
-    - name: Create the hpe-vm log files (root only)
+    - name: "Create the installer's log files (root only): {{ mgr_tool }}"
       ansible.builtin.copy:
         content: ""
         dest: "{{ item }}"
@@ -67,6 +76,7 @@
     # unit under script(1) (a pty), independent of our SSH session; output and
     # exit code go to a root-only log on the host.
     - name: "Start hpe-vm --install, which downloads: {{ vme_image_url }}"
+      when: mgr_tool == 'hpe-vm'
       ansible.builtin.command:
         argv:
           - systemd-run
@@ -108,12 +118,97 @@
       changed_when: true
       no_log: true
 
+    - name: Deploy with hvmcli
+      when: mgr_tool == 'hvmcli'
+      become: true
+      vars:
+        hvmcli_args:
+          - --ip
+          - "{{ manager.ip }}"
+          - --netmask
+          - "{{ manager.netmask }}"
+          - --interface
+          - "{{ mgmt_vs.virtSwitchName }}"
+          - --image
+          - "{{ vme_image_url }}"
+          - --size
+          - "{{ manager.size }}"
+        hvmcli_deploy_args:
+          - --gateway
+          - "{{ manager.gateway }}"
+          - --dns
+          - "{{ manager.dns | join(',') }}"
+          - --hostname
+          - "{{ manager.hostname }}"
+          - --appliance-url
+          - "{{ manager.url }}"
+          - --admin-user
+          - "{{ manager.admin_user }}"
+          - --admin-password-stdin
+      block:
+        - name: Read the management virtSwitch
+          ansible.builtin.command: /opt/hvmcli/bin/hvmcli virtswitch list --json
+          register: vswitches
+          changed_when: false
+
+        - name: Pick the management virtSwitch
+          ansible.builtin.set_fact:
+            mgmt_vs: "{{ (vswitches.stdout | from_json).data | default([]) | selectattr('trafficTypes', 'contains', 'management') | first
+                         | default(none) }}"
+
+        - name: Check there is a management virtSwitch
+          ansible.builtin.assert:
+            that: mgmt_vs is not none
+            fail_msg: "{{ inventory_hostname }} has no hvmcli virtSwitch with management traffic (hvmcli virtswitch list)"
+            quiet: true
+
+        - name: "Precheck the Manager deploy on {{ mgmt_vs.virtSwitchName }}"
+          ansible.builtin.command:
+            argv: "{{ ['/opt/hvmcli/bin/hvmcli', 'deploy', 'manager', 'precheck'] + hvmcli_args + ['--json'] }}"
+          register: hvmcli_precheck
+          changed_when: false
+          failed_when: false
+
+        - name: Check the precheck passed
+          ansible.builtin.assert:
+            that:
+              - hvmcli_precheck.rc == 0
+              - (hvmcli_precheck.stdout | from_json).errorCode | default(1) == 0
+            fail_msg: "hvmcli deploy manager precheck refused: {{ hvmcli_precheck.stdout or hvmcli_precheck.stderr }}"
+            quiet: true
+
+        # hvmcli reads the password on stdin: from a root-only file in /run,
+        # removed once opened, so it is in no argument list and no log.
+        - name: Hand the admin password to the deploy
+          ansible.builtin.copy:
+            content: "{{ vme_manager.admin_password }}"
+            dest: /run/vme-stack-manager.pw
+            owner: root
+            group: root
+            mode: "0600"
+          no_log: true
+
+        - name: "Start hvmcli deploy manager, which downloads: {{ vme_image_url }}"
+          ansible.builtin.command:
+            argv:
+              - systemd-run
+              - "--unit={{ mgr_unit }}"
+              - --collect
+              - --property=TimeoutStartSec=infinity
+              - /bin/sh
+              - -c
+              - >-
+                exec 3< /run/vme-stack-manager.pw; rm -f /run/vme-stack-manager.pw;
+                {{ (['/opt/hvmcli/bin/hvmcli', 'deploy', 'manager'] + hvmcli_args + hvmcli_deploy_args) | map('quote') | join(' ') }}
+                <&3 > {{ hpe_vm_log }} 2>&1; echo $? > {{ hpe_vm_log }}.rc
+          changed_when: true
+
     # hpe-vm waits for the Manager's /ping and does not notice when the appliance's
     # own setup (morpheus-ctl reconfigure in the VM) failed: watch that too, through
     # the VM's guest agent, and stop early instead of waiting the full 90 minutes.
-    - name: Wait for hpe-vm to finish, watching the Manager VM's first boot
+    - name: "Wait for the installer, watching the Manager VM's first boot: {{ mgr_tool }}"
       ansible.builtin.script:
-        cmd: "manager_firstboot.py vme-stack-hpe-vm {{ manager.hostname | quote }}"
+        cmd: "manager_firstboot.py {{ mgr_unit }} {{ manager.hostname | quote }}"
         executable: python3
       become: true
       register: hpe_vm_watch
@@ -122,9 +217,9 @@
       delay: 30
       changed_when: false
 
-    - name: Stop hpe-vm after a failed Manager setup
+    - name: "Stop the installer after a failed Manager setup: {{ mgr_tool }}"
       ansible.builtin.systemd_service:
-        name: vme-stack-hpe-vm
+        name: "{{ mgr_unit }}"
         state: stopped
       become: true
       when: (hpe_vm_watch.stdout | from_json).firstboot_failed
@@ -137,13 +232,16 @@
           {{ ['The Manager VM ' ~ manager.hostname ~ ' on ' ~ inventory_hostname ~ ' failed its first-boot setup'
               ~ ' (morpheus-ctl reconfigure); from its /var/log/cloud-init-output.log:'] + watch.lines
              + ['A frequent cause: the reverse DNS name of ' ~ manager.ip ~ ' (preflight checks it).'
-                ~ ' Fix the cause, then remove the VM before the next run: virsh destroy ' ~ manager.hostname
-                ~ '; virsh undefine ' ~ manager.hostname ~ '; rm /var/morpheus/kvm/local/{hpe-vm-essentials-*.qcow2,morpheus-cloud-init.iso}'] }}
+                ~ (' Fix the cause; hvmcli deploy manager logs --diagnostics shows the deploy, and a VM it'
+                   ~ ' left behind must be removed (virsh list --all) before the next run.'
+                   if mgr_tool == 'hvmcli' else
+                   ' Fix the cause, then remove the VM before the next run: virsh destroy ' ~ manager.hostname
+                   ~ '; virsh undefine ' ~ manager.hostname ~ '; rm /var/morpheus/kvm/local/{hpe-vm-essentials-*.qcow2,morpheus-cloud-init.iso}')] }}
         quiet: true
       vars:
         watch: "{{ hpe_vm_watch.stdout | from_json }}"
 
-    - name: Read hpe-vm's exit code and output
+    - name: "Read the installer's exit code and output: {{ mgr_tool }}"
       ansible.builtin.shell: |
         set -o pipefail
         cat {{ hpe_vm_log }}.rc 2>/dev/null || echo none
@@ -156,16 +254,16 @@
       no_log: true
 
     # no_log above: the output may echo the password; show it masked.
-    - name: Show hpe-vm output
+    - name: "Show the installer's output: {{ mgr_tool }}"
       ansible.builtin.debug:
         msg: "{{ hpe_vm_result.stdout_lines[1:]
                  | map('replace', vme_manager.admin_password, '********') | list }}"
 
-    - name: Check hpe-vm succeeded
+    - name: "Check the installer succeeded: {{ mgr_tool }}"
       ansible.builtin.assert:
         that: hpe_vm_result.stdout_lines[0] | trim == '0'
         fail_msg: >-
-          hpe-vm --install exited with {{ hpe_vm_result.stdout_lines[0] | trim }},
+          {{ 'hvmcli deploy manager' if mgr_tool == 'hvmcli' else 'hpe-vm --install' }} exited with {{ hpe_vm_result.stdout_lines[0] | trim }},
           see its output above and {{ hpe_vm_log }} on {{ inventory_hostname }}
         quiet: true
 

@@ -50,10 +50,16 @@
         path: "{{ host_work }}/{{ host_iso_name }}.partial"
         state: absent
 
+    # Every build: a copy kept from an earlier build may come from another HVM ISO.
+    - name: Remove the grub.cfg of an earlier build
+      ansible.builtin.file:
+        path: "{{ host_work }}/grub.cfg"
+        state: absent
+
     - name: Extract stock grub.cfg
       ansible.builtin.command:
         argv: [xorriso, -osirrox, "on", -indev, "{{ hvm_src_iso }}", -extract, /boot/grub/grub.cfg, "{{ host_work }}/grub.cfg"]
-        creates: "{{ host_work }}/grub.cfg"
+      changed_when: true
 
     - name: Make GRUB boot the installer without waiting
       ansible.builtin.lineinfile:
