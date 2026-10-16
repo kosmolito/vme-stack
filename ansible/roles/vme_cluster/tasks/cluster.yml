@@ -63,6 +63,8 @@
             cpuModel: host-passthrough
             dynamicPlacementMode: "off"
             powerPolicy: balanced
+            # 9.1.0 documents the mode here; server.cpuPlacementMode stays for 9.0.x.
+            vcpuPlacementMode: unmanaged
     status_code: [200, 201]
     timeout: 120
   delegate_to: "{{ probe_from }}"

@@ -11,6 +11,13 @@ empty one).
 
 ## [Unreleased]
 
+### Changed
+
+- Cluster create also sends `config.vcpuPlacementMode: unmanaged`, where the
+  VME 9.1.0 API documents the CPU placement mode (`server.cpuPlacementMode`
+  stays for 9.0.x). Checked: 9.0.2 (9.0.1 docs) and 9.1.0 docs; not yet run on
+  a Manager.
+
 ## [0.1.12] - 2026-10-13
 
 ### Added
