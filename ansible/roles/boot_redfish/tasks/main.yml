@@ -5,20 +5,71 @@
 # Runs only for hosts that need an install (host_state decides), so an installed
 # server is never reset. Needs a linear play (the role uses pause). Redfish calls
 # go from the controller; the BMC itself fetches the ISO from the media server.
+#
+# In two calls: Dell iDRAC9 (fw 3.30) at times stops answering for 2-4 minutes
+# after it mounted the ISO (seen four times on one server, not on every mount),
+# so the boot steps wait for it (settle.yml), and a step that fails anyway is
+# tried once more after the BMC answers again. Boot-once and reset are safe to repeat.
+- name: "Attach the ISO via the BMC: {{ bmc.address }}"
+  block:
+    - name: "Eject and insert the virtual media: {{ host_iso_url }}"
+      ansible.builtin.include_role:
+        name: baremetal_lifecycle
+        apply:
+          delegate_to: localhost
+      vars: &lifecycle_attach
+        hosted_iso_file: "{{ host_iso_url }}"
+        srv_ip: "{{ bmc.address }}"
+        srv_username: "{{ bmc.username }}"
+        srv_password: "{{ bmc.password }}"
+        srv_validate_certs: "{{ bmc.validate_certs | default(false) }}"
+        srv_auth: "{{ bmc_auth | default('session') }}"   # session (basic if refused) | basic
+        eject_virtual_media: true
+        insert_virtual_media: true
+        bios_setup: false
+        boot_once_order: false
+        start_or_reboot: false
+  rescue:
+    - name: Wait for the BMC after the failed attach
+      ansible.builtin.include_tasks: settle.yml
+
+    - name: "Eject and insert the virtual media once more: {{ host_iso_url }}"
+      ansible.builtin.include_role:
+        name: baremetal_lifecycle
+        apply:
+          delegate_to: localhost
+      vars: *lifecycle_attach
+
+- name: Wait for the BMC after mounting the ISO
+  ansible.builtin.include_tasks: settle.yml
+  when: vendor | default('') == 'dell'
+
 - name: "Boot the host from its ISO via its BMC: {{ bmc.address }}"
-  ansible.builtin.include_role:
-    name: baremetal_lifecycle
-    apply:
-      delegate_to: localhost
-  vars:
-    hosted_iso_file: "{{ host_iso_url }}"
-    srv_ip: "{{ bmc.address }}"
-    srv_username: "{{ bmc.username }}"
-    srv_password: "{{ bmc.password }}"
-    srv_validate_certs: "{{ bmc.validate_certs | default(false) }}"
-    srv_auth: "{{ bmc_auth | default('session') }}"   # session (basic if refused) | basic
-    eject_virtual_media: true
-    insert_virtual_media: true
-    bios_setup: "{{ bmc.bios_setup | default(false) }}"   # opt-in per host (site inventory)
-    boot_once_order: true
-    start_or_reboot: true
+  block:
+    - name: Boot once from the virtual CD and start or restart the host
+      ansible.builtin.include_role:
+        name: baremetal_lifecycle
+        apply:
+          delegate_to: localhost
+      vars: &lifecycle_boot
+        hosted_iso_file: "{{ host_iso_url }}"
+        srv_ip: "{{ bmc.address }}"
+        srv_username: "{{ bmc.username }}"
+        srv_password: "{{ bmc.password }}"
+        srv_validate_certs: "{{ bmc.validate_certs | default(false) }}"
+        srv_auth: "{{ bmc_auth | default('session') }}"
+        eject_virtual_media: false
+        insert_virtual_media: false
+        bios_setup: "{{ bmc.bios_setup | default(false) }}"   # opt-in per host (site inventory)
+        boot_once_order: true
+        start_or_reboot: true
+  rescue:
+    - name: Wait for the BMC after the failed boot step
+      ansible.builtin.include_tasks: settle.yml
+
+    - name: Boot once from the virtual CD and start or restart the host, once more
+      ansible.builtin.include_role:
+        name: baremetal_lifecycle
+        apply:
+          delegate_to: localhost
+      vars: *lifecycle_boot

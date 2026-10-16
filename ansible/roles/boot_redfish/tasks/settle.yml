@@ -1,0 +1,29 @@
+---
+# Wait out a BMC that stops answering after a virtual media mount (Dell iDRAC9
+# fw 3.30: 2-4 minutes, nothing in its logs): up to 90 s for it to go quiet,
+# then up to 5 minutes for it to answer again. The Redfish service root needs
+# no login, so these probes never count toward the BMC's IP blocking.
+- name: "Watch whether the BMC stops answering: {{ bmc.address }}"
+  ansible.builtin.uri:
+    url: "https://{{ bmc.address }}/redfish/v1/"
+    validate_certs: "{{ bmc.validate_certs | default(false) }}"
+    headers: {Accept: application/json}
+    timeout: 5
+  delegate_to: localhost
+  register: bmc_quiet
+  until: bmc_quiet.status | default(-1) != 200
+  retries: 18
+  delay: 5
+  failed_when: false
+
+- name: "Wait for the BMC to answer again: {{ bmc.address }}"
+  ansible.builtin.uri:
+    url: "https://{{ bmc.address }}/redfish/v1/"
+    validate_certs: "{{ bmc.validate_certs | default(false) }}"
+    headers: {Accept: application/json}
+    timeout: 5
+  delegate_to: localhost
+  register: bmc_back
+  until: bmc_back.status | default(-1) == 200
+  retries: 60
+  delay: 5

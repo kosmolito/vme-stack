@@ -11,6 +11,14 @@ empty one).
 
 ## [Unreleased]
 
+### Fixed
+
+- Redfish boot of a Dell server failed when its iDRAC stopped answering for a
+  few minutes after mounting the ISO (seen on iDRAC9 firmware 3.30, not on every
+  mount). The run now waits for the iDRAC after the mount (up to 90 s for it to
+  go quiet, then up to 5 min for it to come back), and tries a failed attach or
+  boot step once more after the BMC answers again.
+
 ## [0.1.13] - 2026-10-16
 
 ### Added
