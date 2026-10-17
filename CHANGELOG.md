@@ -11,6 +11,15 @@ empty one).
 
 ## [Unreleased]
 
+### Fixed
+
+- On HVM OS 26.04 hosts with a tagged management network, the postinstall check
+  "management address sits on the management interface" failed although the host
+  was fine: the address sits on the management virtSwitch bridge's VLAN interface
+  (`<bridge>.<vlan>`), not on the bridge itself. The check now also reads the
+  VLAN interface when the virtSwitch carries a `managementVlan`; untagged hosts
+  are checked as before.
+
 ## [0.1.14] - 2026-10-17
 
 ### Fixed

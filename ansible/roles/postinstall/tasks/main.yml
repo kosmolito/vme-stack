@@ -178,7 +178,9 @@
         label: "{{ item.item.bond }}"
 
 # Before cluster join the IP sits on mgmt_interface; hpe-vm later moves it to the OVS bridge "mgmt".
-# HVM OS 26.04: on the management virtSwitch's bridge.
+# HVM OS 26.04: on the management virtSwitch's bridge, or on the bridge's VLAN
+# interface (<bridge>.<vlan>, e.g. with a tagged management network) when the
+# virtSwitch carries a managementVlan.
 - name: "Read the IPv4 addresses of the mgmt interface and bridge: {{ mgmt_ifaces | join(', ') }}"
   ansible.builtin.shell: |
     set -o pipefail
@@ -188,14 +190,18 @@
   register: mgmt_addrs
   changed_when: false
   vars:
-    mgmt_ifaces: "{{ ((vswitches.stdout | from_json).data | selectattr('trafficTypes', 'contains', 'management') | map(attribute='bridgeName') | list)
-                     if hvmcli_bin.stat.exists else [mgmt_interface, 'mgmt'] }}"
+    mgmt_vs: "{{ (vswitches.stdout | from_json).data | default([]) | selectattr('trafficTypes', 'contains', 'management') | list }}"
+    mgmt_vs_tagged: "{{ mgmt_vs | selectattr('managementVlan', 'defined') | rejectattr('managementVlan', 'in', ['', '0']) | list }}"
+    mgmt_ifaces: >-
+      {{ (mgmt_vs | map(attribute='bridgeName') | list
+          + mgmt_vs_tagged | map(attribute='bridgeName') | zip(mgmt_vs_tagged | map(attribute='managementVlan')) | map('join', '.') | list)
+         if hvmcli_bin.stat.exists else [mgmt_interface, 'mgmt'] }}
 
 - name: Check the management address sits on the management interface
   ansible.builtin.assert:
     that: mgmt_addrs.stdout_lines | map('split') | map(attribute=1) | map('regex_replace', '/.*$', '') | select('equalto', ip) | list | length > 0
     fail_msg: >-
-      {{ ip }} is not on {{ 'the management virtSwitch bridge' if hvmcli_bin.stat.exists
+      {{ ip }} is not on {{ 'the management virtSwitch bridge or its VLAN interface' if hvmcli_bin.stat.exists
                             else mgmt_interface ~ ' nor the hpe-vm bridge mgmt' }}
       (found: {{ mgmt_addrs.stdout_lines | join('; ') or 'nothing' }})
     quiet: true
