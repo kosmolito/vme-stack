@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-10-17
+
 ### Fixed
 
 - On HVM OS 26.04 hosts with a tagged management network, the postinstall check
