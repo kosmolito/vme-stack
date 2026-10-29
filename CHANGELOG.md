@@ -11,6 +11,8 @@ empty one).
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-10-29
+
 ### Fixed
 
 - Moving the Manager VM's root volume to a shared datastore now watches the
