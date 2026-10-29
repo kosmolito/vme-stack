@@ -13,6 +13,12 @@ empty one).
 
 ### Fixed
 
+- Moving the Manager VM's root volume to a shared datastore now watches the
+  Manager's own process for the move instead of polling the volume blind: a
+  failed move (such as libvirt's transient "absolute path must be used as
+  block copy target") stops the wait at once, is retried once, and the final
+  error message carries what the Manager reported. Before, a failed move kept
+  the play polling for up to an hour and the failure text was only in the UI.
 - The task "Create or update tasks" (role `vme_tasks`) no longer emits an
   `'item' is undefined` template-error warning when it is skipped: the loop
   variable is gone from the task name (the per-item loop label already names

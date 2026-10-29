@@ -26,48 +26,22 @@
     - name: Set the root volume
       ansible.builtin.set_fact:
         mgr_root: "{{ mgr_server.volumes | selectattr('rootVolume') | first }}"
+        mgr_move_ok: "{{ ((mgr_server.volumes | selectattr('rootVolume') | first).datastore.id | default(0)) == mgr_target_ds.id }}"
+        mgr_move_tried: false
+        mgr_move_failed: []
 
-    - name: "Reconfigure the Manager VM, root volume to: {{ manager.datastore }}"
-      ansible.builtin.uri:
-        url: "{{ vme_api }}/servers/{{ mgr_server.id }}/resize"
-        method: PUT
-        validate_certs: false
-        headers: "{{ vme_headers }}"
-        body_format: json
-        body:
-          server:
-            id: "{{ mgr_server.id }}"
-            plan: {id: "{{ mgr_server.plan.id }}"}
-          volumes: >-
-            {%- set out = [] -%}
-            {%- for v in mgr_server.volumes | sort(attribute='displayOrder') -%}
-            {{- out.append({'id': v.id, 'rootVolume': v.rootVolume, 'name': v.name,
-                             'size': (v.maxStorage / 1073741824) | round | int,
-                             'storageType': v.type.id,
-                             'datastoreId': (mgr_target_ds.id if v.rootVolume else (v.datastore.id if v.datastore else none))}) -}}
-            {%- endfor -%}
-            {{ out }}
-          deleteOriginalVolumes: false
-        timeout: 120
-      delegate_to: "{{ probe_from }}"
-      register: mgr_resize
-      when: (mgr_root.datastore.id | default(0)) != mgr_target_ds.id
-      changed_when: true
-
-    - name: Wait for the Manager's disk to be on {{ manager.datastore }}
-      ansible.builtin.uri:
-        url: "{{ vme_api }}/servers/{{ mgr_server.id }}"
-        validate_certs: false
-        headers: "{{ vme_headers }}"
-      delegate_to: "{{ probe_from }}"
-      register: mgr_after
-      until: >-
-        mgr_after.status | default(0) == 200 and
-        ((mgr_after.json.server.volumes | selectattr('rootVolume') | first).datastore.id | default(0)) == mgr_target_ds.id
-      retries: 120
-      delay: 30
-      failed_when: false
-      when: mgr_resize is not skipped
+    # The resize is asynchronous and its first run can fail transiently in
+    # libvirt ("absolute path must be used as block copy target"; seen on VME
+    # 9.1.0 and reported on 8.0.5, where the same move passed on a retry), so
+    # each attempt watches the server's processes and a failed move is retried
+    # once. Nothing is retried while a move may still be running: the second
+    # attempt needs a finished, failed process.
+    - name: Move the Manager VM's root volume
+      ansible.builtin.include_tasks: manager_vm_move.yml
+      loop: [1, 2]
+      loop_control:
+        loop_var: mgr_move_attempt
+      when: not mgr_move_ok and (mgr_move_attempt == 1 or mgr_move_failed | length > 0)
 
     - name: Wait for the Manager to answer again
       ansible.builtin.uri:
@@ -79,15 +53,24 @@
       until: mgr_ping.status | default(0) == 200
       retries: 60
       delay: 30
-      when: mgr_resize is not skipped
+      when: mgr_move_tried
 
     - name: Check the move
       ansible.builtin.assert:
-        that: >-
-          mgr_resize is skipped or
-          ((mgr_after.json.server.volumes | selectattr('rootVolume') | first).datastore.id | default(0)) == mgr_target_ds.id
-        fail_msg: "The Manager's root volume is not on {{ manager.datastore }}; check the server's history in the Manager"
+        that: mgr_move_ok
+        fail_msg: >-
+          The Manager's root volume is not on {{ manager.datastore }}
+          {{- '; the Manager reported: ' ~ (failed_lines | join('; ')) if failed_lines else '' -}}
+          ; check the server's history in the Manager
         success_msg: "The Manager's root volume is on {{ manager.datastore }}"
+      vars:
+        failed_lines: >-
+          {%- set out = [] -%}
+          {%- for p in mgr_move_failed -%}
+          {{-   out.append((p.displayName | default('process', true)) ~ ' ' ~ (p.status | default('')) ~ ': '
+                           ~ (p.error | default(p.message | default(p.output | default('no message', true), true), true))) -}}
+          {%- endfor -%}
+          {{ out }}
 
 # --- the Manager VM as a managed VM ---------------------------------------------
 # hpe-vm's VM is only "discovered" (kvmUnmanaged). Convert to managed, as the

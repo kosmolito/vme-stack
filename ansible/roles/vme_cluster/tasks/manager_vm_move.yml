@@ -1,0 +1,88 @@
+---
+# One attempt (mgr_move_attempt) to move the Manager VM's root volume to
+# manager.datastore. The resize call only queues the move: the Manager runs it
+# asynchronously and a failure shows up as a failed process on the server
+# (GET /api/processes?serverId, the server's History tab; same fields in API
+# 9.0.2 and 9.1.0). Processes from before the resize are read first so only
+# this attempt's processes count. Sets: mgr_move_tried, mgr_move_ok (volume on
+# the target datastore), mgr_move_failed (this attempt's failed processes).
+
+- name: Read the Manager VM's processes before the move
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/processes?serverId={{ mgr_server.id }}&max=1000"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: mgr_procs_pre
+
+- name: "Reconfigure the Manager VM, root volume to: {{ manager.datastore }}"
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/servers/{{ mgr_server.id }}/resize"
+    method: PUT
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+    body_format: json
+    body:
+      server:
+        id: "{{ mgr_server.id }}"
+        plan: {id: "{{ mgr_server.plan.id }}"}
+      volumes: >-
+        {%- set out = [] -%}
+        {%- for v in mgr_server.volumes | sort(attribute='displayOrder') -%}
+        {{- out.append({'id': v.id, 'rootVolume': v.rootVolume, 'name': v.name,
+                         'size': (v.maxStorage / 1073741824) | round | int,
+                         'storageType': v.type.id,
+                         'datastoreId': (mgr_target_ds.id if v.rootVolume else (v.datastore.id if v.datastore else none))}) -}}
+        {%- endfor -%}
+        {{ out }}
+      deleteOriginalVolumes: false
+    timeout: 120
+  delegate_to: "{{ probe_from }}"
+  register: mgr_resize
+  changed_when: true
+
+- name: Note that a move was started
+  ansible.builtin.set_fact:
+    mgr_move_tried: true
+    mgr_pre_ids: "{{ mgr_procs_pre.json.processes | default([]) | map(attribute='id') | list }}"
+
+# Ends as soon as every process of this attempt is finished, good or bad: a
+# failed move (e.g. libvirt refusing the block copy) stops the wait at once
+# instead of polling the volume blind.
+- name: Wait for the Manager's move to finish (attempt {{ mgr_move_attempt }})
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/processes?serverId={{ mgr_server.id }}&max=1000"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: mgr_move_procs
+  until: >-
+    mgr_move_procs.status | default(0) == 200 and
+    (mgr_move_procs.json.processes | default([]) | rejectattr('id', 'in', mgr_pre_ids) | list | length > 0) and
+    (mgr_move_procs.json.processes | default([]) | rejectattr('id', 'in', mgr_pre_ids)
+       | rejectattr('status', 'in', ['complete', 'failed', 'error', 'cancelled']) | list | length == 0)
+  retries: 120
+  delay: 30
+  failed_when: false
+
+- name: Read the Manager VM after the move (attempt {{ mgr_move_attempt }})
+  ansible.builtin.uri:
+    url: "{{ vme_api }}/servers/{{ mgr_server.id }}"
+    validate_certs: false
+    headers: "{{ vme_headers }}"
+  delegate_to: "{{ probe_from }}"
+  register: mgr_after
+  until: >-
+    mgr_after.status | default(0) == 200 and
+    ((mgr_after.json.server.volumes | selectattr('rootVolume') | first).datastore.id | default(0)) == mgr_target_ds.id
+  retries: 10
+  delay: 15
+  failed_when: false
+
+- name: Note the result of attempt {{ mgr_move_attempt }}
+  ansible.builtin.set_fact:
+    mgr_move_ok: "{{ (root_vol.datastore | default({}, true)).id | default(0) == mgr_target_ds.id }}"
+    mgr_move_failed: "{{ new_procs | selectattr('status', 'in', ['failed', 'error', 'cancelled']) | list }}"
+  vars:
+    root_vol: "{{ mgr_after.json.server.volumes | default([]) | selectattr('rootVolume') | list | first | default({}) }}"
+    new_procs: "{{ mgr_move_procs.json.processes | default([]) | rejectattr('id', 'in', mgr_pre_ids) | list }}"
