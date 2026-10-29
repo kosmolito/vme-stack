@@ -125,7 +125,10 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `media.www_root` | str |  | Directory nginx serves the ISOs from. Default /srv/vme-stack/www. |
 | `media.work_dir` | str |  | Scratch directory for ISO builds. Default /srv/vme-stack/work. |
 | `media.port` | int |  | nginx port. Default 8080. |
-| `media.url` | str |  | Base URL hosts and BMCs fetch the ISOs from. Default http://&lt;ansible_host&gt;:&lt;port&gt;. |
+| `media.https` | bool |  | Serve the media over TLS. Without cert/key a self-signed certificate is generated on the deploy server (SAN: its address and the media.url host). HVM hosts trust it through the seed; BMCs and hypervisors fetching ISOs must trust it themselves or skip verification. Default false. |
+| `media.cert` | str |  | With https: path of the TLS certificate on the deploy server (self-signed, or with its chain appended). Default: generated. |
+| `media.key` | str |  | With https: path of its private key on the deploy server. |
+| `media.url` | str |  | Base URL hosts and BMCs fetch the ISOs from. Default http(s)://&lt;ansible_host&gt;:&lt;port&gt;. |
 
 ## An HVM host (group vars of hvm, or host vars of the host)
 
@@ -144,7 +147,7 @@ example with comments see [`sites/example/inventory.yml`](../sites/example/inven
 | `nics.mgmt` | list of str | yes | MAC addresses of the mgmt NICs (bond0). |
 | `nics.compute` | list of str |  | MAC addresses of the compute NICs (bond1; dedicated layout). |
 | `netplan` | dict |  | Raw netplan (the network: section) instead of nics; needs hpe_vm. |
-| `hpe_vm` | dict |  | The interfaces HPE's cluster setup uses, with raw netplan. |
+| `hpe_vm` | dict |  | The interfaces HPE's cluster setup uses; required with raw netplan (with nics it is derived). The same names on every host of a cluster (HPE requirement): share one block with a YAML anchor. |
 | `hpe_vm.mgmt_interface` | str | yes | Interface with the host's IP (e.g. bond0.100). |
 | `hpe_vm.compute_interface` | str |  | Interface for VM traffic. Default: none (shared). |
 | `storage` | dict |  | Raw installer storage config (autoinstall storage:) instead of boot_disk, e.g. software RAID. |

@@ -11,6 +11,17 @@ empty one).
 
 ## [Unreleased]
 
+### Added
+
+- The deploy server can serve the media over HTTPS: `media.https: true` switches
+  nginx to TLS with the site's `media.cert`/`media.key`, or with a self-signed
+  certificate generated on the deploy server (SAN: its address and the `media.url`
+  host; regenerated when missing, expiring or the SAN changed). The HVM hosts
+  trust the certificate through the seed (so `hpe-vm`/`hvmcli` can fetch the
+  Manager image), and the pipeline's own URL checks validate against it. BMCs and
+  hypervisors fetching ISOs must trust it themselves or skip verification. The
+  default stays HTTP.
+
 ## [0.1.15] - 2026-10-17
 
 ### Fixed

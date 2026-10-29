@@ -254,7 +254,17 @@ argument_specs:
           www_root: {type: str, description: "Directory nginx serves the ISOs from. Default /srv/vme-stack/www."}
           work_dir: {type: str, description: "Scratch directory for ISO builds. Default /srv/vme-stack/work."}
           port: {type: int, description: "nginx port. Default 8080."}
-          url: {type: str, description: "Base URL hosts and BMCs fetch the ISOs from. Default http://<ansible_host>:<port>."}
+          https:
+            type: bool
+            description: >-
+              Serve the media over TLS. Without cert/key a self-signed certificate is generated on the
+              deploy server (SAN: its address and the media.url host). HVM hosts trust it through the seed;
+              BMCs and hypervisors fetching ISOs must trust it themselves or skip verification. Default false.
+          cert:
+            type: str
+            description: "With https: path of the TLS certificate on the deploy server (self-signed, or with its chain appended). Default: generated."
+          key: {type: str, description: "With https: path of its private key on the deploy server."}
+          url: {type: str, description: "Base URL hosts and BMCs fetch the ISOs from. Default http(s)://<ansible_host>:<port>."}
 
   hvm_host:
     short_description: An HVM host (group vars of hvm, or host vars of the host)
@@ -290,7 +300,9 @@ argument_specs:
           compute: {type: list, elements: str, description: "MAC addresses of the compute NICs (bond1; dedicated layout)."}
       netplan: {type: dict, description: "Raw netplan (the network: section) instead of nics; needs hpe_vm."}
       hpe_vm:
-        description: The interfaces HPE's cluster setup uses, with raw netplan.
+        description: >-
+          The interfaces HPE's cluster setup uses; required with raw netplan (with nics it is derived).
+          The same names on every host of a cluster (HPE requirement): share one block with a YAML anchor.
         type: dict
         options:
           mgmt_interface: {type: str, required: true, description: "Interface with the host's IP (e.g. bond0.100)."}

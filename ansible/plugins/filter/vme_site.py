@@ -124,6 +124,15 @@ def _format_errors(site, roles_dir):
         errs.append(f"deploy server media.port {media['port']} is not a port")
     if media.get("url") and not re.match(r"^https?://\S+[^/]$", media["url"]):
         errs.append(f"deploy server media.url '{media['url']}' is not an http(s) URL without a trailing slash")
+    for k in ("cert", "key"):
+        if k in media and not str(media[k]).startswith("/"):
+            errs.append(f"deploy server media.{k} '{media[k]}' is not an absolute path (on the deploy server)")
+    if ("cert" in media) != ("key" in media):
+        errs.append("deploy server media.cert and media.key go together")
+    if ("cert" in media or "key" in media) and not media.get("https"):
+        errs.append("deploy server media.cert/key need media.https: true")
+    if media.get("https") and str(media.get("url", "")).startswith("http://"):
+        errs.append("deploy server media.url is http:// while media.https is true; use an https URL or drop media.url")
     if site.get("ssh_jump") and not re.match(r"^[a-z_][a-z0-9_.-]*@[^\s@]+$", site["ssh_jump"]):
         errs.append(f"ssh_jump '{site['ssh_jump']}' is not user@host")
     mgr = site.get("vme_manager")

@@ -18,7 +18,13 @@ seed_mode: "{{ deploy_media.seed_mode | default('embedded') }}"
 media_www_root: "{{ deploy_media.www_root | default('/srv/vme-stack/www') }}"
 media_work_dir: "{{ deploy_media.work_dir | default('/srv/vme-stack/work') }}"
 media_port: "{{ deploy_media.port | default(8080) }}"
-media_url: "{{ deploy_media.url | default('http://' ~ hostvars[deploy_host].ansible_host ~ ':' ~ media_port) }}"
+media_https: "{{ deploy_media.https | default(false) | bool }}"
+# With https and no cert/key in the site, media_server generates a self-signed pair here.
+media_tls_cert: "{{ deploy_media.cert | default('/srv/vme-stack/tls/media.crt') }}"
+media_tls_key: "{{ deploy_media.key | default('/srv/vme-stack/tls/media.key') }}"
+media_url: >-
+  {{ deploy_media.url | default(('https' if media_https else 'http') ~ '://'
+                                ~ hostvars[deploy_host].ansible_host ~ ':' ~ media_port) }}
 
 # The mgmt network
 domain: "{{ network.domain }}"

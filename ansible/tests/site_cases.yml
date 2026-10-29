@@ -148,6 +148,18 @@ cases:
   - name: seed_mode http not implemented
     patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {seed_mode: http}}}}}}}
     expect: is not implemented yet
+  - name: media cert without key
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {https: true, cert: /srv/tls/media.crt}}}}}}}
+    expect: media.cert and media.key go together
+  - name: media cert and key without https
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {cert: /srv/tls/media.crt, key: /srv/tls/media.key}}}}}}}
+    expect: "media.cert/key need media.https: true"
+  - name: media cert not an absolute path
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {https: true, cert: tls/media.crt, key: tls/media.key}}}}}}}
+    expect: is not an absolute path (on the deploy server)
+  - name: media.url http while media.https
+    patch: {all: {children: {deploy_server: {hosts: {deploy: {media: {https: true, url: "http://media.example.com:8080"}}}}}}}
+    expect: media.url is http:// while media.https is true
   - name: netplan mgmt interface not defined
     patch:
       all:

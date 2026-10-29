@@ -1,6 +1,7 @@
 ---
-# The deploy server builds per-host ISOs (xorriso) and serves them over HTTP
-# (nginx) to BMCs and hypervisors. Debian/Ubuntu (apt) or RHEL family (dnf);
+# The deploy server builds per-host ISOs (xorriso) and serves them over HTTP —
+# or HTTPS with media.https (the site's cert/key, or a generated self-signed
+# pair) — (nginx) to BMCs and hypervisors. Debian/Ubuntu (apt) or RHEL family (dnf);
 # SELinux is switched to permissive, an active firewall gets the media port. Tasks are
 # delegated, so this works under --limit <host> too; call it once per run
 # (linear play, run_once).
@@ -61,6 +62,55 @@
     - "{{ media_work_dir }}"
   become: true
   delegate_to: "{{ deploy_host }}"
+
+# --- TLS (media.https): the site's cert/key, or a generated self-signed pair ----
+- name: Set up TLS
+  when: media_https | bool
+  become: true
+  delegate_to: "{{ deploy_host }}"
+  block:
+    - name: Check the site's cert and key exist
+      when: "'cert' in deploy_media"
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        get_checksum: false
+      loop: ["{{ media_tls_cert }}", "{{ media_tls_key }}"]
+      register: site_tls
+      failed_when: not site_tls.stat.exists
+
+    # Self-signed, SAN = the deploy server's address plus the media_url host (when
+    # a site sets an https media.url). Regenerated when missing, expiring within
+    # 30 days, or the SAN no longer matches (e.g. the address changed).
+    - name: Generate a self-signed certificate
+      when: "'cert' not in deploy_media"
+      vars:
+        san_hosts: "{{ [hostvars[deploy_host].ansible_host | default(deploy_host), media_url | urlsplit('hostname')] | unique }}"
+        san: >-
+          {{ san_hosts | map('regex_replace', '^(\d+\.\d+\.\d+\.\d+)$', 'IP:\1')
+                       | map('regex_replace', '^(?!IP:)(.*)$', 'DNS:\1') | join(',') }}
+      ansible.builtin.shell: |
+        set -euo pipefail
+        crt={{ media_tls_cert | quote }} key={{ media_tls_key | quote }} san={{ san | quote }}
+        if [ -f "$crt" ] && [ -f "$key" ] && openssl x509 -in "$crt" -noout -checkend 2592000 >/dev/null; then
+          have=$(openssl x509 -in "$crt" -noout -ext subjectAltName | tr -d ' \n' \
+                 | sed 's/IPAddress:/IP:/g; s/^.*Name://')
+          ok=1
+          for e in $(printf %s "$san" | tr ',' '\n'); do
+            case ",$have," in *",$e,"*) ;; *) ok=0 ;; esac
+          done
+          [ "$ok" = 1 ] && exit 0
+        fi
+        mkdir -p "$(dirname "$crt")" "$(dirname "$key")"
+        umask 077
+        openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+          -keyout "$key" -out "$crt" -subj "/CN=vme-stack media" -addext "subjectAltName=$san"
+        chmod 644 "$crt"
+        echo changed
+      args:
+        executable: /bin/bash
+      register: tls_gen
+      changed_when: "'changed' in tls_gen.stdout"
+      notify: Reload nginx
 
 # --- SELinux: off on the deploy server (decided 2026-10-11) --------------------
 # Permissive instead of disabled: takes effect at once and survives reboots
@@ -134,8 +184,11 @@
 - name: Apply nginx changes now
   ansible.builtin.meta: flush_handlers
 
+# With https the check also proves the certificate: validated against the cert
+# file itself (self-signed; a site cert must carry its chain for this to pass).
 - name: Check the media URL answers
   ansible.builtin.uri:
     url: "{{ media_url }}/isos/"
     status_code: 200
+    ca_path: "{{ media_tls_cert if media_https | bool else omit }}"
   delegate_to: "{{ deploy_host }}"

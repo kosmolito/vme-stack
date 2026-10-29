@@ -145,7 +145,12 @@ all:
             www_root: /srv/vme-stack/www    # default; nginx serves it, ISOs in <www_root>/isos/
             work_dir: /srv/vme-stack/work   # default; scratch space for ISO builds
             port: 8080                      # default; nginx
-            # url: https://media.example.com   # if hosts/BMCs fetch media through another URL (default http://<deploy server>:<port>)
+            # https: true                     # serve over TLS: self-signed cert generated on the deploy server unless cert/key
+            #                                 # are set; HVM hosts trust it via the seed, BMCs/hypervisors must trust it or skip
+            #                                 # verifying (enabling changes the seeds, so not-yet-installed hosts get new ISOs)
+            # cert: /srv/vme-stack/tls/media.crt   # with https: your own cert (and chain) + key on the deploy server
+            # key: /srv/vme-stack/tls/media.key
+            # url: https://media.example.com   # if hosts/BMCs fetch media through another URL (default http(s)://<deploy server>:<port>)
           # ansible_connection: local # Ansible installed on the deploy server itself (not from the container)
 
     hvm:
@@ -219,7 +224,9 @@ all:
                 addresses: ["10.30.0.25/24"]   # must be the host's ansible_host, static
                 routes: [{to: default, via: 10.30.0.1}]
                 nameservers: {addresses: ["10.30.0.10", "10.30.0.11"], search: ["example.com"]}
-          hpe_vm:                     # required with netplan: what HPE's cluster join uses
+          hpe_vm:                     # required with netplan: what HPE's cluster join uses; identical on
+                                      # every host of the cluster: with several netplan hosts, write it once
+                                      # as "hpe_vm: &hpe_vm {...}" and reuse it with "hpe_vm: *hpe_vm"
             mgmt_interface: bond0.100 # carries the IP; same names as the other hosts of its cluster
             compute_interface: bond1  # VM traffic; not the parent of the mgmt VLAN
           storage:                    # raw autoinstall storage instead of boot_disk: RAID 1 over two disks

@@ -1,7 +1,11 @@
 # Managed by vme-stack: install media for BMCs and hypervisors.
 server {
-    listen {{ media_port }};
-    listen [::]:{{ media_port }};
+    listen {{ media_port }}{{ ' ssl' if media_https | bool }};
+    listen [::]:{{ media_port }}{{ ' ssl' if media_https | bool }};
+{% if media_https | bool %}
+    ssl_certificate {{ media_tls_cert }};
+    ssl_certificate_key {{ media_tls_key }};
+{% endif %}
     root {{ media_www_root }};
     autoindex on;
     sendfile on;

@@ -116,6 +116,12 @@ autoinstall:
     # HVM OS 26.04: HPE's first boot builds vs0 from installer-config (hvmcli_netcfg.py).
     - {{ ("python3 - " ~ (mgmt_interface | trim | quote) ~ " <<'VMESTACK'\n" ~ lookup('ansible.builtin.file', 'hvmcli_netcfg.py') ~ "\nVMESTACK") | to_json }}
 {% endif %}
+{% if media_https | bool %}
+    # media_url is https: trust the media certificate, so hpe-vm/hvmcli can
+    # fetch the Manager image from it on this host.
+    - {{ ("mkdir -p /target/usr/local/share/ca-certificates && cat > /target/usr/local/share/ca-certificates/vme-stack-media.crt <<'VMESTACK'\n" ~ (media_cert | trim) ~ "\nVMESTACK") | to_json }}
+    - curtin in-target --target=/target -- update-ca-certificates
+{% endif %}
 
   user-data:
     hostname: {{ inventory_hostname }}

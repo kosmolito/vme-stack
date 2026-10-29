@@ -38,9 +38,19 @@
       the seed role answers storage, identity, network and proxy, and keeps HPE's locale.
     quiet: true
 
+# With https the installed host must trust the media certificate: hpe-vm/hvmcli
+# fetch the Manager image from media_url. Per host, not run_once (see above).
+- name: Read the media certificate
+  ansible.builtin.slurp:
+    src: "{{ media_tls_cert }}"
+  delegate_to: "{{ deploy_host }}"
+  register: media_cert_read
+  when: media_https | bool
+
 - name: Render user-data
   vars:
     hpe_seed: "{{ hpe_seed_read.stdout }}"
+    media_cert: "{{ (media_cert_read.content | b64decode) if media_https | bool else '' }}"
   ansible.builtin.template:
     src: user-data.j2
     dest: "{{ playbook_dir }}/build/{{ inventory_hostname }}/user-data"
