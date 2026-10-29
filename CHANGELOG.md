@@ -11,6 +11,13 @@ empty one).
 
 ## [Unreleased]
 
+### Fixed
+
+- The task "Create or update tasks" (role `vme_tasks`) no longer emits an
+  `'item' is undefined` template-error warning when it is skipped: the loop
+  variable is gone from the task name (the per-item loop label already names
+  each task).
+
 ### Added
 
 - The deploy server can serve the media over HTTPS: `media.https: true` switches

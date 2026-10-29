@@ -108,7 +108,7 @@
       vars:
         foreign: "{{ vt_plan | selectattr('foreign') | list }}"
 
-    - name: "Create or update tasks: {{ item.name }}"
+    - name: Create or update tasks
       ansible.builtin.uri:
         url: "https://{{ manager.ip }}/api/tasks{{ '/' ~ item.id if item.id else '' }}"
         method: "{{ 'PUT' if item.id else 'POST' }}"
